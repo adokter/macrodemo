@@ -1,0 +1,378 @@
+---
+title: "Macrodemography analyses"
+author:
+ - Jacob Socolar
+ - Adriaan Dokter
+date: "`r Sys.Date()`"
+output: html_document
+params:
+  erd_path: "~/Dropbox/macrodemography/erd/"
+  output_path: "~/Dropbox/macrodemography_refactor/data/residents"
+  years: !r c(2006:2019)
+  extent_space: !r
+    data.frame(
+      min_lon=-125, 
+      max_lon=-66, 
+      min_lat=24, 
+      max_lat=50
+    )
+  period: !r c("spring", "fall")
+  time_grid: 7 # resolution of the time grid
+  tgrid_min: !r c(13, 40)
+  tgrid_max: !r c(16, 43)
+  # we need to constrain altitudes, particularly in the western US, where 
+  # high altitudes are snowbound and inaccessible in spring. We don't want huge
+  # variation in the elevations visited between April and October, especially
+  # because that variation will probably depend on winter snow conditions, 
+  # leading to interannual idosyncracies that are noisy and possibly correlated
+  # with weather variables of interest. The appropriate altitudinal cutoff will
+  # be higher in the Sierras and southern Rockies than in the Cascades and
+  # northern Rockies.
+  max_altitude: 2000
+  max_altitude_above_lat42: 1500
+  effort_thresholds: !r
+    data.frame(
+      dist_max=3, 
+      time_min=5/60, 
+      time_max=1, 
+      cci_min=0
+    )
+  hexagon_area_large: 70000 # desired approx. area of large cells (sq km)
+  hexagon_area_small: 300 # desired approx. area of small cells
+  n_small_min: 10 # minimum number of small cells to compute abundance index for large cell
+  species_to_process: !r c("carwre")
+  always_import_checklists: FALSE
+  always_filter_checklists: FALSE
+  always_resample_bootstrap: FALSE
+  region: "eastern_us"
+  
+---
+
+```{r packages, include=FALSE, echo=FALSE}
+# Install an older version of dggridR from source. See:
+# https://github.com/r-barnes/dggridR/issues/63#issuecomment-1454929653
+remotes::install_github("r-barnes/dggridR", ref = "ec2a040")
+
+# we make sure we have the same version of the erdPackage as this .rmd
+package_path <- strsplit(rstudioapi::getSourceEditorContext()$path, "inst")[[1]][1]
+install.packages(package_path, repos = NULL, type = 'source')
+
+# package load
+library(macrodemography)
+library(data.table) # don't worry about openMP warnings on Mac.
+library(brms)
+library(ggplot2)
+library(dplyr)
+library(magrittr)
+library(sf)
+library(dtplyr) # enable dplyr for data.table
+library(assertthat)
+library(ebirdst)
+library(fasterize)
+library(dggridR)
+
+```
+
+```{r misc-setup}
+# set color scales
+cols_bd <- c(hsv(seq(0,.17,length.out = 100),1,seq(.9,.6,length.out = 100)), hsv(seq(.45,.65, length.out = 100),1,seq(.6,1,length.out = 100)))
+cols_bd2 <- c(hsv(seq(0,.17,length.out = 100),seq(1, .2, length.out = 100),.9), hsv(seq(.45,.65, length.out = 100),seq(.2, 1, length.out = 100),.9))
+
+# blank ggplot2 theme
+blank_theme <-
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()
+  )
+
+western_states <- c("arizona", "california", "colorado", "idaho", "montana",
+                    "nevada", "new mexico", "oregon", "utah", "washington",
+                    "wyoming")
+
+if(params$region == "eastern_us"){
+  region_of_interest <- spData::us_states %>% filter(!(tolower(NAME) %in% western_states))
+} else if(params$region == "western_us") {
+  region_of_interest <- spData::us_states %>% filter(toupper(NAME) %in% western_states)
+} else if(params$region == "conus") {  
+  region_of_interest <- spData::us_states
+} else if(params$region == "north_america") {
+  region_of_interest <- ne_states(country =  c("United States of America","Canada"), returnclass = "sf") %>%
+  filter(region != "Northern Canada") %>% 
+  filter(!name %in% c("Hawaii", "Alaska"))
+} else{
+  region_of_interest <- spData::us_states %>% filter(tolower(NAME) %in% params$region)
+}
+# NOTE: this adds additional cropping of the region of interest
+# adjust if necessary
+raster_of_interest <- fasterize::fasterize(region_of_interest,
+                                   raster::raster(ncol=1000, nrow = 1000, 
+                                                  xmn = -125, xmx = -66, 
+                                                  ymn =24, ymx = 50))
+```
+
+
+```{r define-time-extent}
+# we can't define this in the run params because years isn't yet defined
+extent_time <-
+  data.frame(
+    period = params$period,
+    tgrid_min = params$tgrid_min, 
+    tgrid_max = params$tgrid_max, 
+    year_min = min(params$years), 
+    year_max = max(params$years)
+  )
+
+```
+
+
+```{r create=dggrids}
+# for an area of ~ 70000 km^2, we get a resolution of 6:
+grid_large <- dggridR::dgconstruct(area = params$hexagon_area_large)
+# for an area of ~ 300 km^2, we get a resolution of 11:
+grid_small <- dggridR::dgconstruct(area = params$hexagon_area_small)
+
+```
+
+```{r species-info}
+ebirdst::ebirdst_runs %>% filter(substr(species_code,1,6) %in% species_codes$six)
+
+```
+
+```{r import-checklists}
+checklists_path <- paste0(params$output_path, "/checklists.RDS")
+filtered_checklists_path <- paste0(params$output_path, "/filtered_checklists.RDS")
+
+if(params$always_import_checklists | !file.exists(checklists_path)){
+  checklists <- import_checklists(file.path(params$erd_path, "erd.db"))
+  saveRDS(checklists, checklists_path)
+}
+
+if(params$always_filter_checklists | !file.exists(filtered_checklists_path)){
+  checklists <- readRDS(checklists_path) %>%
+    filter(latitude > params$extent_space$min_lat &
+             latitude < params$extent_space$max_lat &
+             longitude > params$extent_space$min_lon &
+             longitude < params$extent_space$max_lon &
+             year >= min(params$years) &
+             year <= max(params$years) &
+             ELEV_30M_MEDIAN < params$max_altitude &
+             ((ELEV_30M_MEDIAN < params$max_altitude_above_lat42) | (latitude < 42)) &
+             cci > params$effort_thresholds$cci_min &
+             effort_distance_km <= params$effort_thresholds$dist_max &
+             effort_hrs >= params$effort_thresholds$time_min &
+             effort_hrs <= params$effort_thresholds$time_max
+    ) %>%
+    mutate(
+      seqnum_large = dggridR::dgGEO_to_SEQNUM(
+        grid_large, 
+        .$longitude,
+        .$latitude
+        )[[1]],
+      seqnum_small = dggridR::dgGEO_to_SEQNUM(
+        grid_small, 
+        .$longitude,
+        .$latitude
+        )[[1]]
+      )
+  saveRDS(checklists, filtered_checklists_path)
+} else {
+  checklists <- readRDS(filtered_checklists_path)
+}
+
+# extract unique large hexagons
+cells_all <- unique(checklists$seqnum)
+
+```
+
+```{r bootstrap-abundance}
+for(species_code in params$species_to_process){
+  file_out <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
+
+  if(params$always_resample_bootstrap | !file.exists(file_out)){
+    data <- 
+      sample_grid_abun(
+        species_code, params$erd_path, checklists, params$effort_thresholds, 
+        params$extent_space, extent_time, time_window="full", 
+        small_grid=grid_small$res, large_grid=grid_large$res, time_grid=7, 
+        roi = raster_of_interest
+      )
+    if(!dir.exists(dirname(file_out))) dir.create(dirname(file_out), recursive = TRUE)
+    saveRDS(data, file_out)
+  }
+}
+
+```
+
+```{r ratio-functions}
+
+# function to reformat the output of get_ratios() into tidy format
+make_ratios_tidy <- function(cell_ratios){
+  ############################
+  # tidy up replicate data 
+  ############################
+  tidy_rep <- function(data_rep){
+    assert_that(is.list(data_rep))
+    # function expects a list of length one (in order to keep the list element name available)
+    assert_that(length(data_rep)==1)
+    output <- as_tibble(data_rep[[1]])
+    replicate_cols <- colnames(output)
+    output$cell=names(data_rep)[1]
+    output$year <- as.numeric(substr(rownames(data_rep[[1]]),1,4))
+    output$period <- substr(rownames(data_rep[[1]]),6,10^6)
+    output <- tidyr::pivot_longer(output,replicate_cols,names_to = "replicate")
+    output$replicate <- as.numeric(gsub("rep_","",output$replicate))
+    output
+  }
+  data_rep <- cell_ratios$replicates[!is.na(cell_ratios$replicates)]
+  output_rep <- do.call(rbind,lapply(seq_along(data_rep), function(i) tidy_rep(data_rep[i])))
+  ############################
+  # tidy up summary data 
+  ############################ 
+  # convert lists to tibble dataframe
+  output_sum <- do.call(rbind,lapply(cell_ratios$summary[!is.na(cell_ratios$summary)], as_tibble))
+  
+  # add information on whether there are Inf values in a given cell time series
+  output_sum <- left_join(output_sum, output_sum %>% 
+    group_by(cell) %>%
+    summarise(has_inf=sum(is.infinite(avg))>0), by="cell")
+  
+  # add information on number of productivity, survival and total indices per year
+  # replace Inf values with NA
+  
+  period1=unique(output_sum$period)[1]
+  period2=unique(output_sum$period)[2]
+  
+  left_join(output_sum, output_sum %>%
+              mutate(across(everything(), ~ replace(., is.infinite(.),NA))) %>% # change infinite values to NA
+              group_by(cell) %>%
+              summarise(n_prod=sum(is.finite(avg) & period==period1), # typically evaluates to period=="fall
+                        n_surv=sum(is.finite(avg) & period==period2), # typically evaluates to period=="fall
+                        n=sum(is.finite(avg))),
+            by="cell") -> output_sum
+  
+  # return both as a list:
+  list(summary=output_sum, replicates=output_rep)
+}
+
+plot_ratios <- function(cell_number, data, log=T){
+  if(!log){
+    data$median=exp(data$median)
+    data$q10=exp(data$q10)
+    data$q90=exp(data$q90)
+    ylabel="ratio"
+  } else{
+    ylabel="log-ratio"
+  }
+  data %>% filter(cell==cell_number) %>%
+    group_by(season) %>%
+    ggplot(aes(x=year,y=median, col=season)) + 
+    geom_errorbar(aes(ymin=q10, ymax=q90), width=.1,
+                  position=position_dodge(0.2)) + 
+    geom_point() + 
+    geom_line() + 
+    ggtitle(paste("cell index =",cell_number)) + 
+    ylab(ylabel) 
+}
+
+
+# compare variances between recruitment and mortality
+compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000, iter=2000, chains=3){
+  assert_that(is.data.frame(data))
+  assert_that(all(c("cell","year","period","season","n_prod","n_surv","has_inf","avg") %in% names(data)))
+  assert_that(cell_index %in% unique(data$cell), msg = paste("no records found for cell",cell_index,"in data"))
+  
+  # model formula:
+  mod_formula <- bf(ratio | resp_se(sd, sigma = TRUE) ~ season,
+                    sigma ~ season)
+  # apply data filters:
+  ratio_data <- data %>% 
+    filter(cell==cell_index) %>%
+    filter(n_prod>=n_ratio_min) %>%
+    filter(n_surv>=n_ratio_min) %>%
+    filter(is.finite(avg)) %>%
+    filter(!has_inf) %>%
+    mutate(ratio=avg)
+  
+  # initialize return values
+  p_survival_variance_higher=NA
+  effect_size_log=NA
+  
+  # only fit model if we have sufficient ratios for both recruitment and productivity:
+  if(nrow(ratio_data) >= n_ratio_min & all(count(ratio_data,period)$n>=n_ratio_min)){
+    adapt_delta <- 0.8
+    converged <- FALSE
+    tries <- 0
+    
+    while(!converged & tries < 2){
+      print(paste("starting estimation for cell",cell_index))
+      mod <- brm(mod_formula, data = ratio_data, family = gaussian(),
+                 iter = iter, warmup = warmup, chains = chains, refresh = 0,
+                 backend = "cmdstanr")
+      diagnostics <- check_brmsfit_diagnostics(mod)
+      if(all(diagnostics)) converged = TRUE
+      
+      if (!diagnostics[1]) {
+        adapt_delta <- .99
+      }
+      if (!diagnostics[2]) {
+        iter <- iter*2
+      }
+      
+      tries = tries + 1
+      
+    }
+    if(converged){
+      # sample the posterior distribution:
+      d <- as_draws_df(mod)
+      
+      p_survival_variance_higher <- mean(d$b_sigma_seasonsurv > 0)
+      # p_survival_variance_higher is the probability that the variance in survival
+      # is larger than the variance in productivity
+      
+      effect_size_log <- mean(d$b_sigma_seasonsurv)
+      # effect_size_log calculated as the mean estimated posterior effect
+      # equals the slope (b) for sigma when season equals survival, i.e. the log-scale difference between seasons
+      # equals the mean log(survival) standard deviation - mean log(productivity) standard deviation
+      # effect_size_log is still on the logarithmic scale.
+      
+    } else{
+      print(paste("diagnostic failure for cell", cell_index))
+    }
+  } else{
+    print(paste("insufficient ratios available for cell",cell_index))
+  }
+  
+  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log))
+}
+```
+
+# Calculate spring/fall log-ratios 
+
+```{r ratio-analysis}
+##### Declare species #####
+species <- "carwre"  # use consistent 6-letter convention throughout
+
+##### load abundance data #####
+file_species <- list.files(params$output_path, pattern=".rds$", full.names=T) %>% as_tibble %>% filter(grepl(species,value)) %>% pull(value)
+print(paste("loading data from file", file_species,"..."))
+data <- readRDS(file_species)
+
+##### Get demographic indices #####
+cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = n_small_min)
+tidy_ratios <- make_ratios_tidy(cell_ratios)
+  
+# rename fall/spring ratios to productivity/recruitment:
+tidy_ratios$summary %>%
+  mutate(season=ifelse(period=="fall", "prod","surv")) -> tidy_ratios_summary
+
+# Plot the cell ratio series
+cells <- unique(data$abun$spring[[1]]$cell)
+
+
+```

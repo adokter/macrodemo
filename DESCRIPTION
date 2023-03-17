@@ -1,0 +1,30 @@
+Package: macrodemography
+Title: Functions for summarizing abundance from ERD
+Version: 0.0.0.9000
+Authors@R: 
+    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: Summarize ERD in nice ways.
+License: GPL (>= 3)
+Depends:
+    R (>= 2.10)
+Imports:
+   raster,
+   dggridR,
+   rstan,
+   brms,
+   DBI,
+   gtools,
+   stocks,
+   rgee,
+   RSQLite,
+   moments,
+   sf,
+   sp,
+   data.table,
+   doParallel,
+   assertthat
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+LazyData: true
