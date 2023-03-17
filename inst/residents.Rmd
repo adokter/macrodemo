@@ -186,7 +186,7 @@ if(params$always_filter_checklists | !file.exists(filtered_checklists_path)){
 }
 
 # extract unique large hexagons
-cells_all <- unique(checklists$seqnum)
+cells_all <- unique(checklists$seqnum_large)
 
 ```
 
@@ -225,7 +225,7 @@ make_ratios_tidy <- function(cell_ratios){
     output$cell=names(data_rep)[1]
     output$year <- as.numeric(substr(rownames(data_rep[[1]]),1,4))
     output$period <- substr(rownames(data_rep[[1]]),6,10^6)
-    output <- tidyr::pivot_longer(output,replicate_cols,names_to = "replicate")
+    output <- tidyr::pivot_longer(output,all_of(replicate_cols),names_to = "replicate")
     output$replicate <- as.numeric(gsub("rep_","",output$replicate))
     output
   }
@@ -364,7 +364,7 @@ print(paste("loading data from file", file_species,"..."))
 data <- readRDS(file_species)
 
 ##### Get demographic indices #####
-cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = n_small_min)
+cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = params$n_small_min)
 tidy_ratios <- make_ratios_tidy(cell_ratios)
   
 # rename fall/spring ratios to productivity/recruitment:
@@ -374,5 +374,19 @@ tidy_ratios$summary %>%
 # Plot the cell ratio series
 cells <- unique(data$abun$spring[[1]]$cell)
 
+
+```
+
+# compare recruitment/mortality variances
+
+```{r compare-variance}
+# average indices over cells across years (using inverse weighting by sd)
+tidy_ratios_summary %>%
+  group_by(cell,season) %>%
+  filter(is.finite(avg)) %>%
+  summarise(across(c("median","avg","q10","q90","sd"), \(x) weighted.mean(x, 1/sd, na.rm=TRUE))) -> data_cell
+
+# compare variances in productivity and survival for each cell across years:
+data_compare_ratios <- lapply(sort(unique(tidy_ratios_summary$cell)),compare_ratio_variances, data=tidy_ratios_summary)
 
 ```
