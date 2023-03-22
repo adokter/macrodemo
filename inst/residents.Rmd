@@ -234,6 +234,19 @@ cells <- unique(data$abun$spring[[1]]$cell)
 
 ```
 
+# plot demographic indices for specific cells
+```{r plot ratio data for specific cells}
+# select cells with at least 20 valid ratios
+tidy_ratios_summary %>%
+  group_by(cell) %>%
+  summarize(sufficient_data = sum(is.na(median))<20) %>%  
+  filter(sufficient_data) %>% pull(cell) -> cells_select
+
+# plot selected cell 20 (example)
+plot_ratios(cells_select[20], data=tidy_ratios_summary)
+```
+
+
 # compare recruitment/mortality variances
 
 ```{r compare-variance}

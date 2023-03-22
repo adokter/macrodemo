@@ -10,7 +10,8 @@ compare_ratio_variances(
   n_ratio_min = 5,
   warmup = 1000,
   iter = 2000,
-  chains = 3
+  chains = 3,
+  quiet = FALSE
 )
 }
 \arguments{
@@ -25,10 +26,13 @@ compare_ratio_variances(
 \item{iter}{number of samples to characterize the posterior distribution}
 
 \item{chains}{number of parallel mcmc chains.}
+
+\item{quiet}{if TRUE, suppress informational messages (warnings/errors still returned)}
 }
 \value{
-dataframe. p_survival_variance_higher gives posterior probability that survival variance
-is higher than productivity variance. effect_size_log is the average log-scale effect.
+dataframe. \code{p_survival_variance_higher} gives posterior probability that survival variance
+is higher than productivity variance. \code{effect_size_log} is the average log-scale effect.
+\code{prod_mean} is the mean log-scale productivity index, \code{surv_mean} is the mean log-scale survival index.
 }
 \description{
 perform formal test of whether productivity or survival variance is larger
