@@ -16,7 +16,8 @@ sample_grid_abun(
   small_grid = 11,
   large_grid = 6,
   time_grid = 7,
-  .cores = 4
+  .cores = 4,
+  quiet = TRUE
 )
 }
 \arguments{
@@ -43,6 +44,11 @@ sample_grid_abun(
 \item{time_grid}{resolution of time}
 
 \item{.cores}{cores for parallel computation}
+
+\item{quiet}{if TRUE, suppress informational messages (warnings/errors still returned)}
+}
+\value{
+large list object
 }
 \description{
 sample a species given thresholds on effort, space and time

@@ -4,7 +4,12 @@
 \alias{get_cell_timeseries}
 \title{Merge spring and fall indices into a timeseries}
 \usage{
-get_cell_timeseries(cells_all, spring_abun_summary, fall_abun_summary)
+get_cell_timeseries(
+  cells_all,
+  spring_abun_summary,
+  fall_abun_summary,
+  quiet = TRUE
+)
 }
 \arguments{
 \item{cells_all}{numeric vector of cell ids}
@@ -12,6 +17,8 @@ get_cell_timeseries(cells_all, spring_abun_summary, fall_abun_summary)
 \item{spring_abun_summary}{spring abundance summary}
 
 \item{fall_abun_summary}{fall abundance summary}
+
+\item{quiet}{if TRUE suppress informational messages (warnings & errors still shown)}
 }
 \value{
 a list of data.frames, with list elements corresponding to cells

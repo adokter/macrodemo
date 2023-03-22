@@ -7,6 +7,7 @@
 #' @param maxdate the maximum date over which to summarize
 #' @return the median (over pixels in the spatial cell) of the mean (over days
 #'  within the pixels) of the variable of interest.
+#' @export
 daymet_extract <- function(cell = 621, res = 6, variable = "swe", mindate = "2014-01-01", maxdate = "2014-03-01"){
   dg <- dggridR::dgconstruct(res = res)
   global <- dggridR::dgearthgrid(dg, frame=FALSE)
