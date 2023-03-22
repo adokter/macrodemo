@@ -3,8 +3,9 @@
 #' @param cells_all cells to compute
 #' @param period period to compute
 #' @param n_small_min minimum number of small cells required to calculate an abundance ratio for a large cell
+#' @param quiet if TRUE, suppress informational messages (warnings/errors still returned)
 #' @export
-get_ratios <- function(data, cells_all, period=c("spring", "fall"), n_small_min=10){
+get_ratios <- function(data, cells_all, period=c("spring", "fall"), n_small_min=10, quiet=TRUE){
   # verify we have all periods (spring and fall) available
   assert_that(all(period %in% names(data)))
   assert_that(length(period)==2)
@@ -14,7 +15,7 @@ get_ratios <- function(data, cells_all, period=c("spring", "fall"), n_small_min=
   cells_present <- sapply(period, function(x) assert_that(all(data[[x]][[1]]$cell %in% cells_all)))
   assert_that(all(cells_present), msg="loaded data contains unknown grid cells")
   
-  message(paste("calculating ratios with period1 =",period[1],"and period2 =",period[2]))
+  if(!quiet) message(paste("calculating ratios with period1 =",period[1],"and period2 =",period[2]))
   
   # Extract cell-specific abundance data
   spring_abun_summary <- get_abun_summary(data[[period[1]]], n_small_min)

@@ -23,6 +23,7 @@ Imports:
    sp,
    data.table,
    doParallel,
+   foreach,
    assertthat
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
