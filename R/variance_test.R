@@ -1,4 +1,83 @@
 #' perform formal test of whether productivity or survival variance is larger
+#' @param cell_index cell index to compare ratios for
+#' @param data a tidy data.frame with ratio data, typically output from [make_ratios_tidy]
+#' @param n_ratio_min minimum number of seasonal ratios required to calculate a variance
+#' @param warmup number of warmup samples
+#' @param iter number of samples to characterize the posterior distribution
+#' @param chains number of parallel mcmc chains.
+#' @return dataframe. p_survival_variance_higher gives posterior probability that survival variance
+#'  is higher than productivity variance. effect_size_log is the average log-scale effect.
+#' @export
+compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000, iter=2000, chains=3){
+  assert_that(is.data.frame(data))
+  assert_that(all(c("cell","year","period","season","n_prod","n_surv","has_inf","avg") %in% names(data)))
+  assert_that(cell_index %in% unique(data$cell), msg = paste("no records found for cell",cell_index,"in data"))
+  
+  # model formula:
+  mod_formula <- bf(ratio | resp_se(sd, sigma = TRUE) ~ season,
+                    sigma ~ season)
+  # apply data filters:
+  ratio_data <- data %>% 
+    filter(cell==cell_index) %>%
+    filter(n_prod>=n_ratio_min) %>%
+    filter(n_surv>=n_ratio_min) %>%
+    filter(is.finite(avg)) %>%
+    filter(!has_inf) %>%
+    mutate(ratio=avg)
+  
+  # initialize return values
+  p_survival_variance_higher=NA
+  effect_size_log=NA
+  
+  # only fit model if we have sufficient ratios for both recruitment and productivity:
+  if(nrow(ratio_data) >= n_ratio_min & all(count(ratio_data,period)$n>=n_ratio_min)){
+    adapt_delta <- 0.8
+    converged <- FALSE
+    tries <- 0
+    
+    while(!converged & tries < 2){
+      print(paste("starting estimation for cell",cell_index))
+      mod <- brm(mod_formula, data = ratio_data, family = gaussian(),
+                 iter = iter, warmup = warmup, chains = chains, refresh = 0,
+                 backend = "cmdstanr")
+      diagnostics <- check_brmsfit_diagnostics(mod)
+      if(all(diagnostics)) converged = TRUE
+      
+      if (!diagnostics[1]) {
+        adapt_delta <- .99
+      }
+      if (!diagnostics[2]) {
+        iter <- iter*2
+      }
+      
+      tries = tries + 1
+      
+    }
+    if(converged){
+      # sample the posterior distribution:
+      d <- as_draws_df(mod)
+      
+      p_survival_variance_higher <- mean(d$b_sigma_seasonsurv > 0)
+      # p_survival_variance_higher is the probability that the variance in survival
+      # is larger than the variance in productivity
+      
+      effect_size_log <- mean(d$b_sigma_seasonsurv)
+      # effect_size_log calculated as the mean estimated posterior effect
+      # equals the slope (b) for sigma when season equals survival, i.e. the log-scale difference between seasons
+      # equals the mean log(survival) standard deviation - mean log(productivity) standard deviation
+      # effect_size_log is still on the logarithmic scale.
+      
+    } else{
+      print(paste("diagnostic failure for cell", cell_index))
+    }
+  } else{
+    print(paste("insufficient ratios available for cell",cell_index))
+  }
+  
+  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log))
+}
+
+#' perform formal test of whether productivity or survival variance is larger
 #' @param cell_ratios cell ratios object
 #' @param cells_all all cells in cell_ratios
 #' @param cells the cells over which output is desired
