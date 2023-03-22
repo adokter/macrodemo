@@ -1,6 +1,6 @@
 #' Get eBird summaries on cells of a small grid, tagged with membership in a large grid.
 #' @param data zero-filled data (output from import_from_erd())
-#' @param .year the year
+#' @param year the year
 #' @param tgrid_min the minimum time grid index (week number if `time_grid=7`).
 #' @param tgrid_max the maximum time grid index (week number if `time_grid=7`).
 #' @param time_window "gridded" or "full"
@@ -15,10 +15,10 @@
 #' @param roi region of interest
 #' @export
 #' @return a list with grid-sampled data
-#' @details 
+#' @details
 #' The returned list object either contains a single list of lists (when time_window equals full)
 #' or a multiple lists of lists (when time_window equals weekly), one for each week. The deepest
-#' list elements contains count information for the small grid, with list elements labled as 
+#' list elements contains count information for the small grid, with list elements labled as
 #' `cell_X` with `X` the small cell index. These small cell data elements contain the following
 #' list elements returned by [get_cell_data()]:
 #' \describe{
@@ -31,49 +31,50 @@
 #' }
 #' The average count calculated with [stixel_mean_small()] currently assumes for presence only observations
 #' (X's) a count equal to `mean_positive`.
-get_grid_data <- function(data, .year,
+get_grid_data <- function(data, year,
                      tgrid_min, tgrid_max, time_window = "gridded",
                      min_lat, max_lat, min_lon, max_lon = Inf,
                      large_grid = 6, small_grid = 11, time_grid = 7, roi,
                      .cores = 4) {
   cell_data <- list()
-  
+
   zfd <- data
-  zfd <- zfd[year == .year]
+  my_year=year # dummy to use in next line
+  zfd <- zfd[year == my_year]
   zfd <- zfd[latitude > min_lat & latitude < max_lat & longitude > min_lon & longitude < max_lon]
   zfd <- merge(zfd, get_tgrid(time_grid), by = "day_of_year", all = FALSE)
   zfd <- zfd[tgrid >= tgrid_min & tgrid <= tgrid_max]
-  
+
   if (time_window == "full") {
     zfd$tgrid <- 1
   }
-  
+
   dg_large <- dggridR::dgconstruct(res=large_grid)
   dg_small <- dggridR::dgconstruct(res=small_grid)
 
   pixels <- get_pixels(dg_large = dg_large, dg_small = dg_small, roi = roi)
   all_cells_small <- pixels$cells_small$cell[pixels$cells_small$cell_large %in% zfd$seqnum_large]
-  
+
   if (time_window == "gridded") {
     cl <- parallel::makeCluster(.cores, "FORK")
     doParallel::registerDoParallel(cl)
     tgrid <- tgrid_min:tgrid_max
-    
+
     cell_data <- foreach (t = 1:length(tgrid)
     ) %dopar% {
       get_cell_data(zfd, tgrid[t], all_cells_small)
     }
-    
+
     parallel::stopCluster(cl = cl)
   } else if (time_window == "full") {
     tgrid <- 1
     cell_data <- list(get_cell_data(zfd, 1, all_cells_small))
   }
-  
+
   names(cell_data) <- paste0("tgrid_", tgrid)
-  
+
   attr(cell_data, "species") <- attributes(data)$species
-  attr(cell_data, "year") <- .year
+  attr(cell_data, "year") <- year
   attr(cell_data, "large_grid") <- large_grid
   attr(cell_data, "small_grid") <- small_grid
   attr(cell_data, "min_lat") <- min_lat
@@ -108,12 +109,12 @@ get_pixels <- function(dg_large, dg_small, roi) {
   roi_cells <- data.frame(cell = unique(dggridR::dgGEO_to_SEQNUM(dg_large, roi_coords$x, roi_coords$y)[[1]]))
   roi_cells$lat <- dggridR::dgSEQNUM_to_GEO(dg_large, roi_cells$cell)$lat_deg
   roi_cells$lon <- dggridR::dgSEQNUM_to_GEO(dg_large, roi_cells$cell)$lon_deg
-  
+
   roi_cells_small <- data.frame(cell = unique(dggridR::dgGEO_to_SEQNUM(dg_small, roi_coords$x, roi_coords$y)[[1]]))
   roi_cells_small$lat <- dggridR::dgSEQNUM_to_GEO(dg_small, roi_cells_small$cell)$lat_deg
   roi_cells_small$lon <- dggridR::dgSEQNUM_to_GEO(dg_small, roi_cells_small$cell)$lon_deg
   roi_cells_small$cell_large <- dggridR::dgGEO_to_SEQNUM(dg_large, roi_cells_small$lon, roi_cells_small$lat)[[1]]
-  
+
   out <- list(cells_large = roi_cells, cells_small = roi_cells_small)
   return(out)
 }

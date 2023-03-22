@@ -6,7 +6,7 @@
 \usage{
 get_grid_data(
   data,
-  .year,
+  year,
   tgrid_min,
   tgrid_max,
   time_window = "gridded",
@@ -24,7 +24,7 @@ get_grid_data(
 \arguments{
 \item{data}{zero-filled data (output from import_from_erd())}
 
-\item{.year}{the year}
+\item{year}{the year}
 
 \item{tgrid_min}{the minimum time grid index (week number if \code{time_grid=7}).}
 

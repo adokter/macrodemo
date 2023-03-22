@@ -9,6 +9,7 @@
 #' @import rgee
 #' @import dplyr
 #' @import ggplot2
+#' @import data.table
 #' @importFrom brms bf brm as_draws_df prior
 #' @importFrom graphics lines points
 #' @importFrom stats median quantile sd weighted.mean gaussian

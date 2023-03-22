@@ -8,8 +8,8 @@
 #' @param extent_time temporal extent
 #' @param time_window stratify by time grid or not
 #' @param small_grid resolution of small grid
-#' @param large_grid resolution of large grid 
-#' @param time_grid resolution of time 
+#' @param large_grid resolution of large grid
+#' @param time_grid resolution of time
 #' @param .cores cores for parallel computation
 #' @param quiet if TRUE, suppress informational messages (warnings/errors still returned)
 #' @return large list object
@@ -59,7 +59,7 @@ sample_grid_abun <- function(
       }
       data_grid[[i]][[y]] <-
         get_grid_data(
-          data = sp_data, .year = years[y],
+          data = sp_data, year = years[y],
           tgrid_min = extent_time$tgrid_min[i],
           tgrid_max = extent_time$tgrid_max[i],
           time_window = time_window, min_lat = extent_space$min_lat,
