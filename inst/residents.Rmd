@@ -6,7 +6,7 @@ author:
 date: "`r Sys.Date()`"
 output: html_document
 params:
-  erd_path: "~/Dropbox/macrodemography/erd/"
+  erd_path: "~/Dropbox/macrodemography/erd/erd.db"
   output_path: "~/Dropbox/macrodemography_refactor/data/residents"
   years: !r c(2006:2019)
   extent_space: !r
@@ -44,6 +44,7 @@ params:
   always_import_checklists: FALSE
   always_filter_checklists: FALSE
   always_resample_bootstrap: FALSE
+  always_run_variance_test: FALSE
   region: "eastern_us"
   
 ---
@@ -149,7 +150,7 @@ checklists_path <- paste0(params$output_path, "/checklists.RDS")
 filtered_checklists_path <- paste0(params$output_path, "/filtered_checklists.RDS")
 
 if(params$always_import_checklists | !file.exists(checklists_path)){
-  checklists <- import_checklists(file.path(params$erd_path, "erd.db"))
+  checklists <- import_checklists(params$erd_path)
   saveRDS(checklists, checklists_path)
 }
 
@@ -251,12 +252,23 @@ plot_ratios(cells_select[20], data=tidy_ratios_summary)
 
 ```{r compare-variance}
 # average indices over cells across years (using inverse weighting by sd)
+# (note that n_prod,n_surv and n are identical within the grouping, so
+# the weighted.mean just repeats the group value)
 tidy_ratios_summary %>%
   group_by(cell,season) %>%
   filter(is.finite(avg)) %>%
-  summarise(across(c("median","avg","q10","q90","sd"), \(x) weighted.mean(x, 1/sd, na.rm=TRUE)), .groups="drop_last") -> data_cell
+  summarise(across(c("median","avg","q10","q90","sd","n_prod","n_surv","n", "has_inf"), \(x) weighted.mean(x, 1/sd, na.rm=TRUE)), .groups="drop_last") %>%
+  mutate(has_inf=as.logical(has_inf)) -> data_cell
 
+data_cell
 # compare variances in productivity and survival for each cell across years:
-data_compare_ratios <- lapply(sort(unique(tidy_ratios_summary$cell)),compare_ratio_variances, data=tidy_ratios_summary)
+data_compare_ratios <- lapply(sort(unique(tidy_ratios_summary$cell)),compare_ratio_variances, data=tidy_ratios_summary)  %>%
+  do.call(rbind, .)
+
+data_compare_ratios
+
+# merge variance test results to year-averaged cell data:
+data_cell <- left_join(data_cell,data_compare_ratios,by="cell")
+
 
 ```

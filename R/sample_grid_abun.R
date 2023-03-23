@@ -21,8 +21,7 @@ sample_grid_abun <- function(
     time_grid=7, .cores=4, quiet = TRUE){
   # verify input arguments
   assertthat::assert_that(is.character(species_code))
-  path_erd <- paste0(erd_path, "/erd.db")
-  assertthat::assert_that(file.exists(path_erd))
+  assertthat::assert_that(file.exists(erd_path))
   assertthat::assert_that(is.data.frame(checklists))
   assertthat::assert_that(is.data.frame(effort_thresholds))
   assertthat::assert_that(all(c("dist_max","time_min","time_max","cci_min") %in% colnames(effort_thresholds)), msg="missing threshold value(s) for dist_max, time_min, time_max, cci_min")
@@ -42,7 +41,7 @@ sample_grid_abun <- function(
   # takes ~ 2-3 mins for carwre (Carolina Wren)
   sp_data <- import_from_erd(
     species_code,
-    erd_path = path_erd,
+    erd_path = erd_path,
     checklists = checklists
   )
 
