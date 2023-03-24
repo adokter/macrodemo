@@ -72,6 +72,10 @@ library(ebirdst)
 library(fasterize)
 library(dggridR)
 
+# this package also needs a working version of rcmdstan:
+# see https://mc-stan.org/cmdstanr/
+cmdstanr::check_cmdstan_toolchain()
+assert_that(cmdstanr::cmdstan_version() >= "2.31")
 ```
 
 ```{r misc-setup}
@@ -212,63 +216,76 @@ for(species_code in params$species_to_process){
 
 # Calculate spring/fall log-ratios 
 
-```{r ratio-analysis}
-##### Declare species #####
-species <- "carwre"  # use consistent 6-letter convention throughout
-
-##### load abundance data #####
-file_species <- list.files(params$output_path, pattern=".rds$", full.names=T) %>% as_tibble %>% filter(grepl(species,value)) %>% pull(value)
-print(paste("loading data from file", file_species,"..."))
-data <- readRDS(file_species)
-
-##### Get demographic indices #####
-cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = params$n_small_min)
-tidy_ratios <- make_ratios_tidy(cell_ratios)
+```{r calculate-ratios-from-seasonal-abundances}
+for(species_code in params$species_to_process){
+  ##### load abundance data #####
+  file_species <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
   
-# rename fall/spring ratios to productivity/recruitment:
-tidy_ratios$summary %>%
-  mutate(season=ifelse(period=="fall", "prod","surv")) -> tidy_ratios_summary
-
-# Plot the cell ratio series
-cells <- unique(data$abun$spring[[1]]$cell)
-
-
+  print(paste("loading data from file", file_species,"..."))
+  data <- readRDS(file_species)
+  
+  ##### Get demographic indices #####
+  cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = params$n_small_min)
+  tidy_ratios <- make_ratios_tidy(cell_ratios)
+    
+  # rename fall/spring ratios to productivity/recruitment:
+  tidy_ratios$summary %>%
+    mutate(season=ifelse(period=="fall", "prod","surv")) -> tidy_ratios$summary
+  
+  # save the ratio data
+  saveRDS(tidy_ratios, paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
+}
 ```
 
 # plot demographic indices for specific cells
 ```{r plot ratio data for specific cells}
+species_code="carwre"
+tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
+
 # select cells with at least 20 valid ratios
-tidy_ratios_summary %>%
+tidy_ratios$summary %>%
   group_by(cell) %>%
   summarize(sufficient_data = sum(is.na(median))<20) %>%  
   filter(sufficient_data) %>% pull(cell) -> cells_select
 
 # plot selected cell 20 (example)
-plot_ratios(cells_select[20], data=tidy_ratios_summary)
+plot_ratios(cells_select[20], data=tidy_ratios$summary)
 ```
 
 
 # compare recruitment/mortality variances
 
 ```{r compare-variance}
+for(species_code in params$species_to_process){
+  tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
+  
+  # compare variances in productivity and survival for each cell across years:
+  var_save_path <- paste0(params$output_path, "/variance_results/", species_code)
+  dir.create(var_save_path, recursive = TRUE, showWarnings = FALSE)
+  if(params$always_run_variance_test | !file.exists(paste0(var_save_path, "/variances.RDS"))){
+      print(paste0("processing_species ", species_code))
+  
+    data_compare_ratios <- lapply(sort(unique(tidy_ratios_summary$cell)),
+                                  compare_ratio_variances, data=tidy_ratios_summary)  %>%
+      do.call(rbind, .)
+  }
+}
+```
+
+# compare bayesian/frequentist averages
+Quick comparisons of inverse-sd weighted averages and the Bayesian estimates.
+Using the last generated `tidy_ratios` object for now.
+```{r compare-bayesian-frequentist averages}
 # average indices over cells across years (using inverse weighting by sd)
 # (note that n_prod,n_surv and n are identical within the grouping, so
 # the weighted.mean just repeats the group value)
-tidy_ratios_summary %>%
+tidy_ratios$summary %>%
   group_by(cell,season) %>%
   filter(is.finite(avg)) %>%
   summarise(across(c("median","avg","q10","q90","sd","n_prod","n_surv","n", "has_inf"), \(x) weighted.mean(x, 1/sd, na.rm=TRUE)), .groups="drop_last") %>%
   mutate(has_inf=as.logical(has_inf)) -> data_cell
-
-data_cell
-# compare variances in productivity and survival for each cell across years:
-data_compare_ratios <- lapply(sort(unique(tidy_ratios_summary$cell)),compare_ratio_variances, data=tidy_ratios_summary)  %>%
-  do.call(rbind, .)
-
-data_compare_ratios
-
-# merge variance test results to year-averaged cell data:
+  
+# join variance test results to year-averaged cell data:
 data_cell <- left_join(data_cell,data_compare_ratios,by="cell")
-
-
 ```
+
