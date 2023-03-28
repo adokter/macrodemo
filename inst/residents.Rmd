@@ -40,6 +40,7 @@ params:
   hexagon_area_large: 70000 # desired approx. area of large cells (sq km)
   hexagon_area_small: 300 # desired approx. area of small cells
   n_small_min: 10 # minimum number of small cells to compute abundance index for large cell
+  n_variance_min: 5 # minimum number of years to calculate a variance for a cell
   
   daymet: !r
     data.frame(
@@ -56,6 +57,7 @@ params:
   always_download_weather: FALSE
   quiet: TRUE
   region: "eastern_us"
+  plotting_xlim: !r c(-107, -65)
 ---
 
 ```{r packages, include=FALSE, echo=FALSE}
@@ -275,13 +277,95 @@ for(species_code in params$species_to_process){
   if(params$always_run_variance_test | !file.exists(var_save_path)){
       print(paste0("processing_species ", species_code))
     data_compare_ratios <- lapply(sort(unique(tidy_ratios$summary$cell)),
-                                  compare_ratio_variances, data=tidy_ratios$summary, 
+                                  compare_ratio_variances, data=tidy_ratios$summary,
+                                  n_ratio_min=params$n_variance_min,
                                   quiet=params$quiet) %>% do.call(rbind, .)
     saveRDS(data_compare_ratios,file=var_save_path)
   } else{
     data_compare_ratios <- readRDS(file=var_save_path)
   }
 }
+```
+
+
+# plot variances
+
+```{r variance-plotting}
+# I don't think there's anything random in this chunk; setting a seed just in case
+set.seed(5)
+
+for(species_code in params$species_to_process){
+  var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
+  cell_lrat_sd <- readRDS(var_save_path)
+  
+  plotting_data <- cell_lrat_sd |>
+    rename(
+      `p(survival)` = p_survival_variance_higher,
+      surv_sd_diff = effect_size_log
+      )
+  
+   tidy_ratios$summary[,c("cell","n_prod","n_surv","n")] %>% group_by(cell) %>% arrange(cell) %>% filter(row_number()==1) %>% right_join(cell_lrat_sd, by="cell")
+   
+tidy_ratios$summary %>% 
+  select(cell, n_prod,n_surv,n) %>% 
+  group_by(cell) %>%
+  filter(row_number()==1) %>%
+  right_join(cell_lrat_sd, by="cell") %>%
+  filter(n_prod >= params$n_variance_min & n_surv >= params$n_variance_min) %>%
+  filter(!is.na(p_survival_variance_higher)) -> plotting_data
+
+dggridR::dgcellstogrid(
+    grid_large,
+    plotting_data$cell,
+    frame=TRUE,
+    wrapcells=TRUE
+    ) %>% 
+  mutate(cell=as.numeric(cell)) %>%
+  left_join(plotting_data, by="cell") -> grid2
+
+  grid2 <- dggridR::dgcellstogrid(
+    grid_large,
+    plotting_data$cell,
+    frame=TRUE,
+    wrapcells=TRUE
+    ) |>
+    merge(plotting_data, by.x = "cell") |>
+    filter(!is.na(n_prod)) |>
+    filter(
+      (n_prod >= params$min_n_for_variance) & (n_surv >= params$min_n_for_variance)
+    )
+  
+  plot_cells_on_map <- function(x, color_scale){
+    ggplot() + blank_theme + coord_fixed() +
+    geom_sf(data=region_of_interest, fill=NA, color="black") +
+    geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill=eval(parse(text=x))), alpha=0.7)    +
+    geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    color_scale +
+    labs(fill=x) +
+    xlim(params$plotting_xlim)
+    }
+  
+  # define color scales
+  scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_variance_min, length(params$years) - 1))
+  scale_blue_red <- scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0, 1))
+  fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
+  
+  # plot number of years with a productivity index
+  plot_cells_on_map("n_prod", color_scale=scale_viridis)
+  # plot number of years with a survival index
+  plot_cells_on_map("n_surv", color_scale=scale_viridis)
+  # plot probability that survival variance is higher than productivity
+  plot_cells_on_map("p_survival_variance_higher", color_scale=scale_blue_red)
+  # plot the difference in survival and recruitment variance (log-effect size)
+  # scale opacity by the probability that the survival variance is higher.
+  ggplot() + coord_fixed() + blank_theme +
+    geom_sf(data=region_of_interest, fill=NA, color="black") +
+    geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+    geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl)) +
+    xlim(params$plotting_xlim)
+}
+
 ```
 
 # compare bayesian/frequentist averages
