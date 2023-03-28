@@ -298,14 +298,6 @@ for(species_code in params$species_to_process){
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   cell_lrat_sd <- readRDS(var_save_path)
   
-  plotting_data <- cell_lrat_sd |>
-    rename(
-      `p(survival)` = p_survival_variance_higher,
-      surv_sd_diff = effect_size_log
-      )
-  
-   tidy_ratios$summary[,c("cell","n_prod","n_surv","n")] %>% group_by(cell) %>% arrange(cell) %>% filter(row_number()==1) %>% right_join(cell_lrat_sd, by="cell")
-   
 tidy_ratios$summary %>% 
   select(cell, n_prod,n_surv,n) %>% 
   group_by(cell) %>%
@@ -323,18 +315,6 @@ dggridR::dgcellstogrid(
   mutate(cell=as.numeric(cell)) %>%
   left_join(plotting_data, by="cell") -> grid2
 
-  grid2 <- dggridR::dgcellstogrid(
-    grid_large,
-    plotting_data$cell,
-    frame=TRUE,
-    wrapcells=TRUE
-    ) |>
-    merge(plotting_data, by.x = "cell") |>
-    filter(!is.na(n_prod)) |>
-    filter(
-      (n_prod >= params$min_n_for_variance) & (n_surv >= params$min_n_for_variance)
-    )
-  
   plot_cells_on_map <- function(x, color_scale){
     ggplot() + blank_theme + coord_fixed() +
     geom_sf(data=region_of_interest, fill=NA, color="black") +
