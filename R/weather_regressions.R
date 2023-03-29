@@ -7,6 +7,10 @@
 #' @return a data.frame with regression results
 #' @export
 #' @inheritParams compare_ratio_variances
+#' @details
+#' The Daymet predictor Snow Water Equivalent (`swe`) is root-transformed to meet normality assumptions.
+#' For `swe` we also require we also at least two years with nonzero snow, otherwise the regression for
+#' that cell will be skipped.
 weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, warmup=1000, iter=2000, chains=3, quiet=FALSE){
 
   #initialize output data.frame
@@ -43,14 +47,17 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
         filter(cell==cells_all[i]) %>%
         filter(period==period_demographic) %>%
         filter(!is.na(avg))
+      # add column `predictor` containing a copy of the data we want to regress:
+      data_regression$predictor=data_regression[[par]]
+
+      # root-transform snow data (for normality assumptions)
+      if (par=="swe") data_regression$predictor = sqrt(data_regression$predictor)
+
       # initialize output
       output=data.frame(period=period_demographic,label=par,n=nrow(data_regression),
                         mean=NA,median=NA,sd=NA,skewness=NA,kurtosis=NA,p_value=NA,converged=NA)
 
       if(nrow(data_regression)>min_n){
-        # add column `response` containing a copy of the data we want to regress:
-        data_regression$predictor=data_regression[[par]]
-
         # construct brms regression formula:
         brms_formula <- bf(avg | resp_se(sd, sigma = TRUE) ~ predictor)
 

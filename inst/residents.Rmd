@@ -411,7 +411,7 @@ for(species_code in params$species_to_process){
     
     data_regression <- weather_regressions(tidy_ratios, data_daymet,params$daymet,params$n_year_min, quiet=TRUE)
     
-    saveRDS(data_regression, paste0(regression_save_path, "/regressions.RDS"))
+    saveRDS(data_regression, paste0(regression_save_path, "/regressions.rds"))
   }
 }
 
