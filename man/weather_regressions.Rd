@@ -2,42 +2,39 @@
 % Please edit documentation in R/weather_regressions.R
 \name{weather_regressions}
 \alias{weather_regressions}
-\title{perform weather regressions. currently expects to see data (and perform regressions)
-for winter temp, winter swe, and summer temp, but this would be easily updated by
-setting NULL defaults for these inputs plus a bit of control flow.}
+\title{Perform weather regressions.}
 \usage{
 weather_regressions(
-  cell_ratios,
-  cells_all,
-  years,
+  tidy_ratios,
+  data_daymet,
+  params_daymet,
   min_n,
-  janfeb_temp,
-  julaug_temp,
-  decmar_swe
+  warmup = 1000,
+  iter = 2000,
+  chains = 3,
+  quiet = FALSE
 )
 }
 \arguments{
-\item{cell_ratios}{cell ratios object}
+\item{tidy_ratios}{ratios object, typically output of \link{make_ratios_tidy}}
 
-\item{cells_all}{all cells in cell_ratios}
+\item{data_daymet}{weather data, typically output of \link{daymet_set_extract}}
 
-\item{years}{years underlying the cell ratios object}
+\item{params_daymet}{data.frame specifying Daymet data extraction, see Details section of \link{daymet_set_extract}}
 
 \item{min_n}{minimum sample size for which to estimate a slope}
 
-\item{janfeb_temp}{jan/feb temps}
+\item{warmup}{number of warmup samples}
 
-\item{julaug_temp}{july/august temps}
+\item{iter}{number of samples to characterize the posterior distribution}
 
-\item{decmar_swe}{dec-mar swe}
+\item{chains}{number of parallel mcmc chains.}
+
+\item{quiet}{if TRUE, suppress informational messages (warnings/errors still returned)}
 }
 \value{
-2-element list.  prob_surv gives posterior probability that survival variance
-is higher than productivity variance
-coef is the average log-scale effect.
+a data.frame with regression results
 }
 \description{
-perform weather regressions. currently expects to see data (and perform regressions)
-for winter temp, winter swe, and summer temp, but this would be easily updated by
-setting NULL defaults for these inputs plus a bit of control flow.
+Perform weather regressions.
 }

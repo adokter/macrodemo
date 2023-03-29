@@ -2,7 +2,7 @@
 % Please edit documentation in R/daymet_extract.R
 \name{daymet_extract}
 \alias{daymet_extract}
-\title{extract Daymet summaries over a spatiotemporal cell of interest}
+\title{Extract Daymet summaries over a spatiotemporal cell of interest}
 \usage{
 daymet_extract(
   cell = 621,
@@ -28,5 +28,5 @@ the median (over pixels in the spatial cell) of the mean (over days
 within the pixels) of the variable of interest.
 }
 \description{
-extract Daymet summaries over a spatiotemporal cell of interest
+Extract Daymet summaries over a spatiotemporal cell of interest
 }

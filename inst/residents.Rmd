@@ -40,14 +40,15 @@ params:
   hexagon_area_large: 70000 # desired approx. area of large cells (sq km)
   hexagon_area_small: 300 # desired approx. area of small cells
   n_small_min: 10 # minimum number of small cells to compute abundance index for large cell
-  n_variance_min: 5 # minimum number of years to calculate a variance for a cell
+  n_year_min: 5 # minimum number of years to calculate a variance or regression for a cell
   
   daymet: !r
     data.frame(
       label=c("tmax_summer","tmax_winter","swe"), 
       variable=c("tmax","tmax","swe"),
       date_min=c("01-01","07-01","12-01"),
-      date_max=c("02-28","08-31","03-15")
+      date_max=c("02-28","08-31","03-15"),
+      period=c("fall","spring","spring")
     )
   species_to_process: !r c("carwre")
   always_import_checklists: FALSE
@@ -55,6 +56,7 @@ params:
   always_resample_bootstrap: FALSE
   always_run_variance_test: FALSE
   always_download_weather: FALSE
+  always_run_regressions: FALSE
   quiet: TRUE
   region: "eastern_us"
   plotting_xlim: !r c(-107, -65)
@@ -278,7 +280,7 @@ for(species_code in params$species_to_process){
       print(paste0("processing_species ", species_code))
     data_compare_ratios <- lapply(sort(unique(tidy_ratios$summary$cell)),
                                   compare_ratio_variances, data=tidy_ratios$summary,
-                                  n_ratio_min=params$n_variance_min,
+                                  n_ratio_min=params$n_year_min,
                                   quiet=params$quiet) %>% do.call(rbind, .)
     saveRDS(data_compare_ratios,file=var_save_path)
   } else{
@@ -303,7 +305,7 @@ tidy_ratios$summary %>%
   group_by(cell) %>%
   filter(row_number()==1) %>%
   right_join(cell_lrat_sd, by="cell") %>%
-  filter(n_prod >= params$n_variance_min & n_surv >= params$n_variance_min) %>%
+  filter(n_prod >= params$n_year_min & n_surv >= params$n_year_min) %>%
   filter(!is.na(p_survival_variance_higher)) -> plotting_data
 
 dggridR::dgcellstogrid(
@@ -326,7 +328,7 @@ dggridR::dgcellstogrid(
     }
   
   # define color scales
-  scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_variance_min, length(params$years) - 1))
+  scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years) - 1))
   scale_blue_red <- scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0, 1))
   fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
   
@@ -379,32 +381,11 @@ if(params$always_download_weather | !file.exists(weather_file)){
   # initialize google earth engine
   ee_Initialize()
   
-  # helper function to extract daymet parameters specified by params$daymet
-  extract_daymet_data <- function(year, cell, grid, params_daymet){
-    # initialize the data.frame for daymet data:
-    daymet_data=data.frame(matrix(nrow=1,ncol=nrow(params_daymet)+2,dimnames=list(NULL,c("cell","year",params_daymet$label))))
-    daymet_data$cell=cell
-    daymet_data$year=year
-    # fill data.frame with averaged daymet data:
-    for(lab in params_daymet$label){
-      # filter parameters to use for daymet extraction:
-      par_daymet <- params_daymet %>% filter(label==lab)
-      # construct min and max dates
-      maxdate=paste0(year,"-",par_daymet$date_max)
-      mindate=paste0(year,"-",par_daymet$date_min)
-      # address cases in which the min to max period includes a year change:
-      if(as.Date(maxdate)<as.Date(mindate)) mindate=paste0(year-1,"-",par_daymet$date_min)
-      # average over large cell, and store in data.frame
-      daymet_data[par_daymet$label] <- daymet_extract(cell=cell, res=grid$res, variable=par_daymet$variable, mindate=mindate, maxdate=maxdate)
-    }
-    return(daymet_data)
-  }
-  
   # loop over cells and years
   data_daymet=data.frame()
   for (cell in cells_all) {
     for (year in params$years){
-      data_daymet <- rbind(data_daymet, extract_daymet_data(year, cell, grid_large, params$daymet))
+      data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
     }
   }
   saveRDS(data_daymet, weather_file)
@@ -412,3 +393,27 @@ if(params$always_download_weather | !file.exists(weather_file)){
   data_daymet <- readRDS(weather_file)
 }
 ```
+
+Perform the regressions of fluctuations (from a single cell, single season, 
+across years) against weather variables.
+```{r weather-regressions}
+
+# do regressions
+for(species_code in params$species_to_process){
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
+  dir.create(regression_save_path, recursive = TRUE, showWarnings = FALSE)
+  
+  if(params$always_run_regressions | !file.exists(paste0(regression_save_path, "/regressions.rds"))){
+    print(paste0("processing_species ", species_code))
+    
+    file_path <- paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds")
+    tidy_ratios <- readRDS(file_path)
+    
+    data_regression <- weather_regressions(tidy_ratios, data_daymet,params$daymet,params$n_year_min, quiet=TRUE)
+    
+    saveRDS(data_regression, paste0(regression_save_path, "/regressions.RDS"))
+  }
+}
+
+```
+
