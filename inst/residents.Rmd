@@ -44,11 +44,11 @@ params:
   
   daymet: !r
     data.frame(
-      label=c("tmax_summer","tmax_winter","swe"), 
+      label=c("tmax_winter","tmax_summer","swe"),
       variable=c("tmax","tmax","swe"),
       date_min=c("01-01","07-01","12-01"),
       date_max=c("02-28","08-31","03-15"),
-      period=c("fall","spring","spring")
+      period=c("spring","fall","spring")
     )
   species_to_process: !r c("carwre")
   always_import_checklists: FALSE
