@@ -266,9 +266,26 @@ tidy_ratios$summary %>%
 plot_ratios(cells_select[20], data=tidy_ratios$summary)
 ```
 
+# check normality assumptions
+Check the higher moments of the abundance log-ratios to verify adequacy of Gaussian approximations.
+
+```{r normality-check}
+for(species_code in params$species_to_process){
+  tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
+  # excess kurtosis = kurtosis - 3
+  ggplot(tidy_ratios$summary, aes(x=kurtosis-3)) + 
+    geom_histogram(binwidth=.1) + 
+    xlab("excess kurtosis") + 
+    ggtitle(species_code)
+  # skewness
+  ggplot(tidy_ratios$summary, aes(x=skewness)) + 
+    geom_histogram(binwidth=.1) + 
+    xlab("skewness") + 
+    ggtitle(species_code)
+}
+```
 
 # compare recruitment/mortality variances
-
 ```{r compare-variance, echo=FALSE}
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
@@ -291,7 +308,6 @@ for(species_code in params$species_to_process){
 
 
 # plot variances
-
 ```{r variance-plotting}
 # I don't think there's anything random in this chunk; setting a seed just in case
 set.seed(5)
@@ -414,6 +430,5 @@ for(species_code in params$species_to_process){
     saveRDS(data_regression, paste0(regression_save_path, "/regressions.rds"))
   }
 }
-
 ```
 
