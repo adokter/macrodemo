@@ -54,7 +54,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
       if (par=="swe") data_regression$predictor = sqrt(data_regression$predictor)
 
       # initialize output
-      output=data.frame(period=period_demographic,label=par,n=nrow(data_regression),
+      output=data.frame(cell=cells_all[i],period=period_demographic,label=par,n=nrow(data_regression),
                         mean=NA,median=NA,sd=NA,skewness=NA,kurtosis=NA,p_value=NA,converged=NA)
 
       if(nrow(data_regression)>min_n){
@@ -97,7 +97,8 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
 
           slopes <- d$b_predictor
 
-          output=data.frame(period=period_demographic,
+          output=data.frame(cell=cells_all[i],
+                            period=period_demographic,
                             label=par,
                             n=nrow(data_regression),
                             mean=mean(slopes),
