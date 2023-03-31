@@ -37,7 +37,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
     converged <- FALSE
     tries <- 0
 
-    for(j in seq_along(nrow(params_daymet))){
+    for(j in 1:nrow(params_daymet)){
       # the daymet parameter to use in regression:
       par = params_daymet$label[j]
       # the period (demographic index) to use in regression:
