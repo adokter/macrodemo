@@ -62,7 +62,8 @@ daymet_set_extract <- function(year, cell, grid, params_daymet){
     # address cases in which the min to max period includes a year change:
     if(as.Date(maxdate)<as.Date(mindate)) mindate=paste0(year-1,"-",par_daymet$date_min)
     # average over large cell, and store in data.frame
-    daymet_data[par_daymet$label] <- daymet_extract(cell=cell, res=grid$res, variable=par_daymet$variable, mindate=mindate, maxdate=maxdate)
+    daymet_data_cell <- daymet_extract(cell=cell, res=grid$res, variable=par_daymet$variable, mindate=mindate, maxdate=maxdate)
+    if(!is.null(daymet_data_cell)) daymet_data[par_daymet$label] <- daymet_data_cell
   }
   return(daymet_data)
 }
