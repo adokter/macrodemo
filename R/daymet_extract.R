@@ -63,7 +63,7 @@ daymet_set_extract <- function(year, cell, grid, params_daymet){
     if(as.Date(maxdate)<as.Date(mindate)) mindate=paste0(year-1,"-",par_daymet$date_min)
     # average over large cell, and store in data.frame
     daymet_data_cell <- daymet_extract(cell=cell, res=grid$res, variable=par_daymet$variable, mindate=mindate, maxdate=maxdate)
-    if(!is.null(daymet_data_cell)) daymet_data[par_daymet$label] <- daymet_data_cell
+    if(!is.null(daymet_data_cell[[1]])) daymet_data[par_daymet$label] <- daymet_data_cell[[1]]
   }
   return(daymet_data)
 }
