@@ -33,11 +33,12 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
     # select data for a single cell
     # crsi stands for 'cell ratio series i'
 
-    adapt_delta <- 0.8
-    converged <- FALSE
-    tries <- 0
-
     for(j in 1:nrow(params_daymet)){
+      # initialize flags
+      adapt_delta <- 0.8
+      converged <- FALSE
+      tries <- 0
+
       # the daymet parameter to use in regression:
       par = params_daymet$label[j]
       # the period (demographic index) to use in regression:
@@ -111,10 +112,10 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
           )
         } else{
           output$converged=FALSE
-          if(!quiet) print(paste("diagnostic failure for cell", cell_index))
+          if(!quiet) print(paste("diagnostic failure for cell", cells_all[i]))
         }
       } # if
-    df_out <- rbind(df_out,output)
+      df_out <- rbind(df_out,output)
     } # for loop across daymet parameters
   } # for loop across cells
   df_out

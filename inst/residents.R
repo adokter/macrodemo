@@ -3,9 +3,13 @@
 # Parameters ----
 
 params <- list()
-
-params$erd_path <- "~/Documents/erd/erd.db"
-params$output_path <- "~/Documents/macrodemography/data/"
+if(Sys.info()[["user"]]=="amd427"){
+  params$erd_path <- "~/Dropbox/macrodemography/erd/erd.db"
+  params$output_path <- "~/Dropbox/macrodemography_refactor/data/residents"
+} else if(Sys.info()[["user"]]=="bg423"){
+  params$erd_path <- "~/Documents/erd/erd.db"
+  params$output_path <- "~/Documents/macrodemography/data/"
+}
 params$years <- c(2006:2019)
 params$extent_space <-  data.frame( min_lon=-125, max_lon=-66, min_lat=24, max_lat=50 )
 params$period <- c("spring", "fall")
@@ -87,11 +91,11 @@ if(params$region == "eastern_us"){
   region_of_interest <- spData::us_states %>% filter(!(tolower(NAME) %in% western_states))
 } else if(params$region == "western_us") {
   region_of_interest <- spData::us_states %>% filter(toupper(NAME) %in% western_states)
-} else if(params$region == "conus") {  
+} else if(params$region == "conus") {
   region_of_interest <- spData::us_states
 } else if(params$region == "north_america") {
   region_of_interest <- ne_states(country =  c("United States of America","Canada"), returnclass = "sf") %>%
-  filter(region != "Northern Canada") %>% 
+  filter(region != "Northern Canada") %>%
   filter(!name %in% c("Hawaii", "Alaska"))
 } else{
   region_of_interest <- spData::us_states %>% filter(tolower(NAME) %in% params$region)
@@ -100,8 +104,8 @@ if(params$region == "eastern_us"){
 # NOTE: this adds additional cropping of the region of interest
 # adjust if necessary
 raster_of_interest <- fasterize::fasterize(region_of_interest,
-                                   raster::raster(ncol=1000, nrow = 1000, 
-                                                  xmn = -125, xmx = -66, 
+                                   raster::raster(ncol=1000, nrow = 1000,
+                                                  xmn = -125, xmx = -66,
                                                   ymn =24, ymx = 50))
 
 # define time extent ----
@@ -109,9 +113,9 @@ raster_of_interest <- fasterize::fasterize(region_of_interest,
 extent_time <-
   data.frame(
     period = params$period,
-    tgrid_min = params$tgrid_min, 
-    tgrid_max = params$tgrid_max, 
-    year_min = min(params$years), 
+    tgrid_min = params$tgrid_min,
+    tgrid_max = params$tgrid_max,
+    year_min = min(params$years),
     year_max = max(params$years)
   )
 
@@ -151,12 +155,12 @@ if(params$always_filter_checklists | !file.exists(filtered_checklists_path)){
     ) %>%
     mutate(
       seqnum_large = dggridR::dgGEO_to_SEQNUM(
-        grid_large, 
+        grid_large,
         .$longitude,
         .$latitude
         )[[1]],
       seqnum_small = dggridR::dgGEO_to_SEQNUM(
-        grid_small, 
+        grid_small,
         .$longitude,
         .$latitude
         )[[1]]
@@ -175,11 +179,11 @@ for(species_code in params$species_to_process){
   file_out <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
 
   if(params$always_resample_bootstrap | !file.exists(file_out)){
-    data <- 
+    data <-
       sample_grid_abun(
-        species_code, params$erd_path, checklists, params$effort_thresholds, 
-        params$extent_space, extent_time, time_window="full", 
-        small_grid=grid_small$res, large_grid=grid_large$res, time_grid=7, 
+        species_code, params$erd_path, checklists, params$effort_thresholds,
+        params$extent_space, extent_time, time_window="full",
+        small_grid=grid_small$res, large_grid=grid_large$res, time_grid=7,
         roi = raster_of_interest, quiet = FALSE
       )
     if(!dir.exists(dirname(file_out))) dir.create(dirname(file_out), recursive = TRUE)
@@ -190,20 +194,20 @@ for(species_code in params$species_to_process){
 # Calculate spring/fall log-ratios ----
 
 for(species_code in params$species_to_process){
-  ##### load abundance data ----
+  ##### load abundance data
   file_species <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
-  
+
   print(paste("loading data from file", file_species,"..."))
   data <- readRDS(file_species)
-  
-# Get demographic indices 
+
+# Get demographic indices
   cell_ratios <- get_ratios(data$abun, cells_all, n_small_min = params$n_small_min, quiet=params$quiet)
   tidy_ratios <- make_ratios_tidy(cell_ratios)
-    
+
   # rename fall/spring ratios to productivity/recruitment:
   tidy_ratios$summary %>%
     mutate(season=ifelse(period=="fall", "prod","surv")) -> tidy_ratios$summary
-  
+
   # save the ratio data
   saveRDS(tidy_ratios, paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 }
@@ -216,7 +220,7 @@ tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "
 # select cells with at least 20 valid ratios
 tidy_ratios$summary %>%
   group_by(cell) %>%
-  summarize(sufficient_data = sum(is.na(median))<20) %>%  
+  summarize(sufficient_data = sum(is.na(median))<20) %>%
   filter(sufficient_data) %>% pull(cell) -> cells_select
 
 # plot selected cell 20 (example)
@@ -228,14 +232,14 @@ plot_ratios(cells_select[20], data=tidy_ratios$summary)
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
   # excess kurtosis = kurtosis - 3
-  ggplot(tidy_ratios$summary, aes(x=kurtosis-3)) + 
-    geom_histogram(binwidth=.1) + 
-    xlab("excess kurtosis") + 
+  ggplot(tidy_ratios$summary, aes(x=kurtosis-3)) +
+    geom_histogram(binwidth=.1) +
+    xlab("excess kurtosis") +
     ggtitle(species_code)
   # skewness
-  ggplot(tidy_ratios$summary, aes(x=skewness)) + 
-    geom_histogram(binwidth=.1) + 
-    xlab("skewness") + 
+  ggplot(tidy_ratios$summary, aes(x=skewness)) +
+    geom_histogram(binwidth=.1) +
+    xlab("skewness") +
     ggtitle(species_code)
 }
 
@@ -243,7 +247,7 @@ for(species_code in params$species_to_process){
 
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
-  
+
   # compare variances in productivity and survival for each cell across years:
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   dir.create(dirname(var_save_path), recursive = TRUE, showWarnings = FALSE)
@@ -262,59 +266,61 @@ for(species_code in params$species_to_process){
 
 # plot variances ----
 
-# I don't think there's anything random in this chunk; setting a seed just in case
-set.seed(5)
+# helper function to plot cells on a map
+plot_cells_on_map <- function(data, param, color_scale){
+  ggplot() + blank_theme + coord_fixed() +
+    geom_sf(data=region_of_interest, fill=NA, color="black") +
+    geom_polygon(data=data, aes(x=long, y=lat, group=group, fill=eval(parse(text=param))), alpha=0.7) +
+    geom_path(data=data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    color_scale +
+    labs(fill=param) +
+    xlim(params$plotting_xlim)
+}
 
 for(species_code in params$species_to_process){
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   cell_lrat_sd <- readRDS(var_save_path)
-  
-tidy_ratios$summary %>% 
-  select(cell, n_prod,n_surv,n) %>% 
-  group_by(cell) %>%
-  filter(row_number()==1) %>%
-  right_join(cell_lrat_sd, by="cell") %>%
-  filter(n_prod >= params$n_year_min & n_surv >= params$n_year_min) %>%
-  filter(!is.na(p_survival_variance_higher)) -> plotting_data
 
-dggridR::dgcellstogrid(
-    grid_large,
-    plotting_data$cell,
-    frame=TRUE,
-    wrapcells=TRUE
-    ) %>% 
-  mutate(cell=as.numeric(cell)) %>%
-  left_join(plotting_data, by="cell") -> grid2
+  tidy_ratios$summary %>%
+    select(cell, n_prod,n_surv,n) %>%
+    group_by(cell) %>%
+    filter(row_number()==1) %>%
+    right_join(cell_lrat_sd, by="cell") %>%
+    filter(n_prod >= params$n_year_min & n_surv >= params$n_year_min) %>%
+    filter(!is.na(p_survival_variance_higher)) -> plotting_data
 
-  plot_cells_on_map <- function(x, color_scale){
-    ggplot() + blank_theme + coord_fixed() +
-    geom_sf(data=region_of_interest, fill=NA, color="black") +
-    geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill=eval(parse(text=x))), alpha=0.7)    +
-    geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
-    color_scale +
-    labs(fill=x) +
-    xlim(params$plotting_xlim)
-    }
-  
+  dggridR::dgcellstogrid(
+      grid_large,
+      plotting_data$cell,
+      frame=TRUE,
+      wrapcells=TRUE
+      ) %>%
+    mutate(cell=as.numeric(cell)) %>%
+    left_join(plotting_data, by="cell") -> grid2
+
   # define color scales
   scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years) - 1))
   scale_blue_red <- scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0, 1))
   fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
-  
+
   # plot number of years with a productivity index
-  plot_cells_on_map("n_prod", color_scale=scale_viridis)
+  p=plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)
+  print(p)
   # plot number of years with a survival index
-  plot_cells_on_map("n_surv", color_scale=scale_viridis)
+  p=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)
+  print(p)
   # plot probability that survival variance is higher than productivity
-  plot_cells_on_map("p_survival_variance_higher", color_scale=scale_blue_red)
+  p=plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)
+  print(p)
   # plot the difference in survival and recruitment variance (log-effect size)
   # scale opacity by the probability that the survival variance is higher.
-  ggplot() + coord_fixed() + blank_theme +
+  p=ggplot() + coord_fixed() + blank_theme +
     geom_sf(data=region_of_interest, fill=NA, color="black") +
     geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
     geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl)) +
     xlim(params$plotting_xlim)
+  print(p)
 }
 
 
@@ -331,7 +337,7 @@ tidy_ratios$summary %>%
   filter(is.finite(avg)) %>%
   summarise(across(c("median","avg","q10","q90","sd","n_prod","n_surv","n", "has_inf"), \(x) weighted.mean(x, 1/sd, na.rm=TRUE)), .groups="drop_last") %>%
   mutate(has_inf=as.logical(has_inf)) -> data_cell
-  
+
 # join variance test results to year-averaged cell data:
 data_cell <- left_join(data_cell,data_compare_ratios,by="cell")
 
@@ -348,7 +354,7 @@ if(!params$quiet) print(paste("loading/processing weather file",basename(weather
 if(params$always_download_weather | !file.exists(weather_file)){
   # initialize google earth engine
   ee_Initialize()
-  
+
   # loop over cells and years
   data_daymet=data.frame()
   for (cell in cells_all) {
@@ -362,23 +368,23 @@ if(params$always_download_weather | !file.exists(weather_file)){
   data_daymet <- readRDS(weather_file)
 }
 
-# Perform the regressions of fluctuations (from a single cell, single season, 
+# Perform the regressions of fluctuations (from a single cell, single season,
 # across years) against weather variables.
 
-# do regressions ----
+
+# run weather regressions ----
 for(species_code in params$species_to_process){
   regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
   dir.create(regression_save_path, recursive = TRUE, showWarnings = FALSE)
-  
+
   if(params$always_run_regressions | !file.exists(paste0(regression_save_path, "/regressions.rds"))){
     print(paste0("processing_species ", species_code))
-    
+
     file_path <- paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds")
     tidy_ratios <- readRDS(file_path)
-    
+
     data_regression <- weather_regressions(tidy_ratios, data_daymet,params$daymet,params$n_year_min, quiet=TRUE)
-    
+
     saveRDS(data_regression, paste0(regression_save_path, "/regressions.rds"))
   }
 }
-
