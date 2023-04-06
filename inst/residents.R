@@ -397,7 +397,7 @@ regression_save_path <- paste0(params$output_path, "/regression_results/", speci
 data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
 
 # plot function for regression data:
-plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", alpha="auto") {
+plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", alpha="auto", labels=FALSE) {
   assert_that(moment %in% names(data),msg=paste("column",variable,"not found in data"))
   assert_that(label_daymet %in% unique(data_regression$label),msg=paste("daymet variable",variable,"not found in data"))
   data <- filter(data, label==label_daymet)
@@ -405,6 +405,10 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
   grid <- dggridR::dgcellstogrid(grid_large,data$cell,frame=TRUE,wrapcells=TRUE)
   # merge grid and regression data
   grid_data <- merge(grid,data,by="cell")
+  # calculate average lat,long for cells:
+  grid %>%
+    group_by(cell) %>%
+    summarize(long=mean(long), lat=mean(lat)) -> data_label
   # define opacity based on value of alpha parameter:
   if(is.number(alpha)) grid_data$alpha=alpha
   # when alpha is NULL, color according to the certainty that the coefficient is either positively or
@@ -420,36 +424,39 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
     geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = !!sym(moment)), alpha=grid_data$alpha) +
     geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits=fill_lim) + xlim(x_lim)
+  if(labels) p = p + geom_text(aes(x=long,y=lat,label=cell), data=data_label)
   print(p)
+  p
 }
 
 # plot number of years of data on which the regression was based
-plot_regression(data_regression, "tmax_summer", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8)
-plot_regression(data_regression, "tmax_winter", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8)
-plot_regression(data_regression, "swe", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8)
+# also add the cell number labels
+plot_regression(data_regression, "tmax_winter", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
+plot_regression(data_regression, "swe", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
+plot_regression(data_regression, "tmax_summer", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
 
 # plot the mean regression slopes
-plot_regression(data_regression, "tmax_summer", "mean", params$plotting_xlim, alpha=.8)
 plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim, alpha=.8)
 plot_regression(data_regression, "swe", "mean", params$plotting_xlim, alpha=.8)
+plot_regression(data_regression, "tmax_summer", "mean", params$plotting_xlim, alpha=.8)
 
 # plot the posterior probability that the regression coefficient is larger than zero (p_value)
-plot_regression(data_regression, "tmax_summer", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1))
 plot_regression(data_regression, "tmax_winter", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1))
 plot_regression(data_regression, "swe", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1))
+plot_regression(data_regression, "tmax_summer", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1))
 
 # plot the mean regression slopes, with transparency denoting the probability of being non-zero
 # essentially a combining the previous two types of plots in one figure
-plot_regression(data_regression, "tmax_summer", "mean", params$plotting_xlim)
 plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim)
 plot_regression(data_regression, "swe", "mean", params$plotting_xlim)
+plot_regression(data_regression, "tmax_summer", "mean", params$plotting_xlim)
 
 # plot the kurtosis (note for Guassian distribution the kurtosis = 3)
-plot_regression(data_regression, "tmax_summer", "kurtosis", params$plotting_xlim, fill_lim=c(3,9))
 plot_regression(data_regression, "tmax_winter", "kurtosis", params$plotting_xlim, fill_lim=c(3,9))
 plot_regression(data_regression, "swe", "kurtosis", params$plotting_xlim, fill_lim=c(3,9))
+plot_regression(data_regression, "tmax_summer", "kurtosis", params$plotting_xlim, fill_lim=c(3,9))
 
 # plot the skewness
-plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "tmax_winter", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "swe", "skewness", params$plotting_xlim)
+plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim)
