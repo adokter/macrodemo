@@ -68,7 +68,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
 
           # Here we hard-code that in addition to meeting the thresholds for inclusion,
           # we also need to see at least two years with nonzero snow.
-          if(par=="swe" & (sum((data_regression$predictor > 0) & (!is.na(data_regression$avg))) > 2)) break
+          if(par=="swe" & !(sum((data_regression$predictor > 0) & (!is.na(data_regression$avg))) > 2)) break
 
           # run brms model
           capture.output(suppressWarnings(suppressMessages(
