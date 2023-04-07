@@ -314,13 +314,13 @@ set.seed(5)
 
 for(species_code in params$species_to_process){
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
-  cell_lrat_sd <- readRDS(var_save_path)
+  variance_test_data <- readRDS(var_save_path)
   
 tidy_ratios$summary %>% 
   select(cell, n_prod,n_surv,n) %>% 
   group_by(cell) %>%
   filter(row_number()==1) %>%
-  right_join(cell_lrat_sd, by="cell") %>%
+  right_join(variance_test_data, by="cell") %>%
   filter(n_prod >= params$n_year_min & n_surv >= params$n_year_min) %>%
   filter(!is.na(p_survival_variance_higher)) -> plotting_data
 
@@ -432,3 +432,164 @@ for(species_code in params$species_to_process){
 }
 ```
 
+
+```{r plotting-simple-weather-regressions}
+plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim = NULL) {
+  assert_that(moment %in% names(data),msg=paste("column",variable,"not found in data"))
+  assert_that(label_daymet %in% unique(data_regression$label),msg=paste("daymet variable",variable,"not found in data"))
+  data <- filter(data, label==label_daymet)
+  grid <- dggridR::dgcellstogrid(grid_large,data$cell,frame=TRUE,wrapcells=TRUE)
+  grid_data <- merge(grid,data,by="cell")
+  p <- ggplot() + coord_fixed() + blank_theme +
+    geom_sf(data=region_of_interest, fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = !!sym(moment)), alpha = 0.8)   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd2, na.value=NA) + xlim(x_lim)
+  p
+}
+
+plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim)
+plot_regression(data_regression, "tmax_winter", "p_value", params$plotting_xlim)
+
+for(species_code in params$species_to_process){
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.RDS"))
+  grid <- dggridR::dgcellstogrid(grid_large,data_regression$cell,frame=TRUE,wrapcells=TRUE)
+  
+  plotting_data2 <- data_regression |>
+    rename(
+      `mean slope` = janfeb_mean_bayes,
+      `p(winter temp)` = janfeb_p_bayes,
+      `p(summer temp)` = julaug_p_bayes,
+      `p(winter swe)` = swe_p_bayes
+    ) |>
+    mutate(
+      lon = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lon_deg
+    ) |>
+    filter(lon > params$plotting_xlim[1])
+  
+  grid <- dggridR::dgcellstogrid(grid_large,plotting_data2$cell,frame=TRUE,wrapcells=TRUE)
+  grid3  <- merge(grid,plotting_data2,by="cell") |>
+    filter(long > params$plotting_xlim[1] + 2) |>
+    filter(!is.na(`mean slope`))
+  
+  for (i in 2:22) {
+    plotting_fun(
+      grid3,
+      names(plotting_data2)[i],
+      x_lim = params$plotting_xlim, fill_lim = NULL)
+  }
+  
+  grid_data <- grid3 |>
+    filter(!is.na(`mean slope`))
+  
+  fl <- max(abs(grid3$`mean slope`), na.rm = T) + .1
+  fill_lim <- c(-fl, fl)
+  
+  p <- ggplot() + coord_fixed() + blank_theme +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(
+      data=grid_data, aes(x=long, y=lat, group=group, fill = `mean slope`), 
+      alpha = 2*abs(grid_data$`p(winter temp)` - 0.5))   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = fill_lim)
+  print(p)
+  
+  grid_data <- grid3 |>
+    filter(!is.na(julaug_mean_bayes))
+  
+  fl <- max(abs(grid3$julaug_mean_bayes), na.rm = T) + .1
+  fill_lim <- c(-fl, fl)
+  p <- ggplot() + coord_fixed() + blank_theme +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = julaug_mean_bayes), 
+                 alpha = 2*abs(grid_data$`p(summer temp)` - 0.5))   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = fill_lim)
+  p + labs(fill="mean slope")
+
+  grid_data <- grid3 |>
+    filter(!is.na(swe_mean_bayes))
+  
+  fl <- max(abs(grid3$swe_mean_bayes), na.rm = T) + .1
+  fill_lim <- c(-fl, fl)
+  p <- ggplot() +  coord_fixed() + blank_theme +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = swe_mean_bayes), 
+                 alpha = 2*abs(grid_data$`p(winter temp)` - 0.5))   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = fill_lim)
+  p + labs(fill="mean slope")
+  
+  ###
+  grid_data <- grid3 |>
+    filter(!is.na(`p(winter temp)`))
+  p <- ggplot() + blank_theme + coord_fixed() +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, 
+                                     fill = `p(winter temp)`), alpha = .8)   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1))
+  p + labs(fill="probability")
+  
+  grid_data <- grid3 |>
+    filter(!is.na(`p(summer temp)`))
+  p <- ggplot() + blank_theme + coord_fixed() +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, 
+                                     fill = `p(summer temp)`), alpha = .8)   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1))
+  p + labs(fill="probability")
+  
+  grid_data <- grid3 |>
+    filter(!is.na(`p(winter swe)`))
+  p <- ggplot() + blank_theme + coord_fixed() +
+    geom_polygon(data=states, aes(x=long, y=lat, group=group), fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = `p(winter swe)`), alpha = .8)   +
+    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1))
+  p + labs(fill="probability")
+  
+  factor_names <- 
+    c("skewness_winter_temp", "skewness_winter_snow", "skewness_summer_temp",
+    "excess_kurtosis_winter_temp", "excess_kurtosis_winter_snow", 
+    "excess_kurtosis_summer_temp")
+  
+  name_labels <- 
+    c("skewness (winter temp)", "skewness (winter snow)", "skewness (summer temp)",
+      "excess kurtosis (winter temp)", "excess kurtosis (winter snow)", 
+      "excess kurtosis (summer temp)")
+
+  names(name_labels) <- factor_names
+  
+  pd3 <- plotting_data2 |>
+    mutate(
+      excess_kurtosis_winter_temp = janfeb_kurt_bayes - 3,
+      excess_kurtosis_winter_snow = swe_kurt_bayes - 3,
+      excess_kurtosis_summer_temp = julaug_kurt_bayes - 3
+    ) |>
+    rename(
+      skewness_winter_temp = janfeb_skew_bayes,
+      skewness_winter_snow = swe_skew_bayes,
+      skewness_summer_temp = julaug_skew_bayes
+    ) |>
+    pivot_longer(factor_names) |>
+    mutate(
+      name = factor(
+        name,
+        levels = factor_names
+      )
+    )
+  
+  ggplot(pd3, aes(value)) + geom_density() +
+    facet_wrap("name",
+              labeller = labeller(name = name_labels)) +
+    ylab("") +
+    xlab("") +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank())
+}
+
+```
