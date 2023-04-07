@@ -489,3 +489,183 @@ plot_regression(data_regression, "tmax_summer", "kurtosis", params$plotting_xlim
 plot_regression(data_regression, "tmax_winter", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "swe", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim)
+
+####
+#### Smoothing using ICAR/CAR models ------------------------------------------------------
+####
+
+
+# prepare CAR model data from weather ragression data
+data_regression %>%
+  mutate(lat = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lat_deg,
+         lon = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lon_deg) %>%
+  filter(lon > params$plotting_xlim[1]) %>%
+  # remove a region where we have sparse data
+  filter(!(lat > 38.7 & lon < -99.5)) %>%
+  filter(!is.na(mean)) %>%
+  group_by(label) %>%
+  mutate(slope_scaled = scale(`mean`),
+         lat_scaled = scale(lat),
+         known_se = `sd`/sd(`mean`)) -> car_data
+
+# verify kurtosis and skewness
+car_data %>%
+  mutate(excess_kurtosis=kurtosis-3) %>%
+  pivot_longer(c(skewness, excess_kurtosis)) %>%
+  group_by(label,name) %>%
+  ggplot(aes(value)) +
+  geom_density() +
+  facet_wrap(c("name","label"))
+
+# filter data, add upper lower bounds to the slope
+car_data %>%
+  filter(label=="tmax_winter") %>%
+  arrange(lat) %>%
+  mutate(lower=slope_scaled-known_se) %>%
+  mutate(upper=slope_scaled+known_se) %>%
+  mutate(lat_jit = lat + rnorm(n(), 0, .5)) -> car_data_select
+
+get_adjacency_matrix(car_data_select$cell, grid_large) -> adjacency_mat
+
+icar_fit_lat <-
+  brm(
+    slope_scaled | resp_se(known_se, sigma = TRUE) ~
+      lat_scaled + car(M, gr = cell, type = "icar"),
+    data = car_data_select,
+    data2 = list(M = adjacency_mat),
+    backend = 'cmdstanr',
+    iter = 12000, warmup = 2000,
+    cores = 4, adapt_delta = .8, max_treedepth = 11, refresh = 0)
+
+summary(icar_fit_lat)
+
+# verify BFMI statistic is sufficiently high
+rstan::get_bfmi(icar_fit_lat$fit)
+
+# QUESTION: why re_formula = NA, i.e. not including group-level effects
+# QUESTION: why incl_autor = F, i.e. do not include correlation structures in the predictions
+# sample the posterior distribution:
+draws <-  posterior_epred(icar_fit_lat, re_formula = NA, incl_autocor = F)
+# extract quantiles for each cell
+draws_quantiles <- as_tibble(t(sapply(1:ncol(draws),function(idx) quantile(draws[,idx],c(.5,seq(.05,1,.1))))))
+# bind with original data
+car_data_select %>%
+  select(cell, lat, slope_scaled, known_se, lower,upper, lat_jit) %>%
+  rename(slope=slope_scaled) %>%
+  cbind(draws_quantiles) -> q_frame
+
+# scaled certainty, inverse of the standard error:
+certainty <- min(q_frame$known_se)/q_frame$known_se
+
+# backtransform the data using the inverse of the scale() operation
+q_frame[, ! (names(q_frame) %in% c("label","cell","lat", "lat_jit"))] <-
+  q_frame[, ! (names(q_frame) %in% c("label","cell","lat", "lat_jit"))] * sd(car_data_select$mean) +
+  mean(car_data_select$mean)
+# bring up points outside of the plotting range
+q_frame$lower[q_frame$lower < -.5] <- -.5
+# color settings
+fill_color <- "salmon2"
+alpha <- .5
+point_color <- "gray25"
+# plot the data and the scatter points, opacity by their certainty:
+ggplot(q_frame) + theme_classic() +
+  geom_ribbon(aes(x = lat, ymin = `5%`, ymax = `95%`), fill = fill_color, alpha = alpha) +
+  geom_ribbon(aes(x = lat, ymin = `15%`, ymax = `85%`), fill = fill_color, alpha = alpha) +
+  geom_ribbon(aes(x = lat, ymin = `25%`, ymax = `75%`), fill = fill_color, alpha = alpha) +
+  geom_ribbon(aes(x = lat, ymin = `35%`, ymax = `65%`), fill = fill_color, alpha = alpha) +
+  geom_ribbon(aes(x = lat, ymin = `45%`, ymax = `55%`), fill = fill_color, alpha = alpha) +
+  geom_point(aes(x = lat_jit, y = slope, alpha = certainty), color = point_color) +
+  geom_segment(aes(x = lat_jit, y = lower, xend = lat_jit, yend = upper, alpha = certainty), color = point_color) +
+  geom_line(aes(x = lat, y = `50%`)) +
+  ylim(c(-.5, .5))
+# plot only the model fit:
+ggplot(q_frame) + theme_classic() +
+  geom_ribbon(aes(x = lat, ymin = `5%`, ymax = `95%`), fill = fill_color, alpha = alpha) +
+  geom_line(aes(x = lat, y = `50%`)) +
+  ylim(c(-.5, .5))
+
+
+# ICAR model without latitude
+icar_fit <-
+  brm(slope_scaled | resp_se(known_se, sigma = TRUE) ~
+        car(M, gr = cell, type = "icar"),
+      data = car_data_select,
+      data2 = list(M = adjacency_mat),
+      backend = 'cmdstanr',
+      iter = 12000, warmup = 2000, cores = 4, refresh = 0)
+summary(icar_fit)
+
+npt <- nrow(car_data_select)
+true_values <- matrix(nrow = 40000, ncol = npt)
+for(i in 1:npt) {
+  print(i)
+  # the (unsmoothed) posterior slope:
+  M <- car_data_select$slope_scaled[i]
+  # the posterior uncertainty from the weather regression:
+  se <- car_data_select$known_se[i]
+  # get posterior draws of the linear predictor
+  # re.form=NULL (default), i.e. include all group-level effects
+  # incl_autor=TRUE (default), i.e. include correlation structures in prediction
+  LP <-  posterior_linpred(icar_fit, re.form = NULL, incl_autocor = T)[ , i]
+  # get draws of the unobserved latent uncertainty:
+  sigma <- as_draws_df(icar_fit)$sigma
+  # error propagation, combining sigma form CAR model and se from weather regression
+  # QUESTION: why the linear predictor here
+  mu = (M*sigma^2 + LP * se^2)/(sigma^2 + se^2)
+  scale = 1/sqrt(1/sigma^2 + 1/se^2)
+  true_values[ , i] <- rnorm(40000, mu, scale)
+}
+
+smooth_prob <-
+  data.frame(
+    cell = car_data_select$cell,
+    smooth_prob =
+      apply(
+        true_values, 2,
+        function(x){
+          mean(
+            x +  mean(car_data_select$mean)/
+              sd(car_data_select$mean) > 0
+          )
+        }
+      )
+  )
+smooth_mean <-
+  data.frame(
+    cell = car_data_select$cell,
+    smooth_mean =
+      apply(true_values, 2,
+            function(x){
+              mean(x) +
+                mean(car_data_select$mean)/
+                sd(car_data_select$mean
+                )
+            }
+      )
+  )
+
+
+plotting_data3 <- merge(car_data_select, smooth_prob, by = "cell") |>
+  merge(smooth_mean, by = "cell")
+
+grid <- dggridR::dgcellstogrid(grid_large,plotting_data3$cell,frame=TRUE,wrapcells=TRUE)
+grid3  <- merge(grid,plotting_data3,by="cell")
+
+grid_data <- grid3[!is.na(grid3$smooth_prob), ]
+p <- ggplot() + coord_fixed() + blank_theme +
+  geom_sf(data=region_of_interest, fill=NA, color="black")   +
+  geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_prob), alpha = .8)   +
+  geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
+  scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1), oob=scales::squish) +
+  xlim(params$plotting_xlim)
+print(p)
+
+fl <- max(abs(grid_data$smooth_mean), na.rm = T) + .1
+p <- ggplot() + coord_fixed() + blank_theme +
+  geom_sf(data=region_of_interest, fill=NA, color="black")   +
+  geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
+  geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
+  scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
+  xlim(params$plotting_xlim)
+p
+
