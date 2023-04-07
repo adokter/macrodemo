@@ -74,7 +74,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
           capture.output(suppressWarnings(suppressMessages(
             mod <- brm(brms_formula, data = data_regression, family = gaussian(),
                        prior = prior(std_normal(), class = "b"),
-                       ter = iter, warmup = warmup, chains = chains, refresh = 0,
+                       iter = iter, warmup = warmup, chains = chains, refresh = 0,
                        backend = "cmdstanr", silent=ifelse(quiet,2,1))
           )))
 
