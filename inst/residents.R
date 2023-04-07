@@ -1,7 +1,7 @@
 
-
-# Parameters ----
-
+####
+#### Parameters -------------------------------------------------------------
+####
 params <- list()
 if(Sys.info()[["user"]]=="amd427"){
   params$erd_path <- "~/Dropbox/macrodemography/erd/erd.db"
@@ -34,8 +34,18 @@ params$always_run_regressions    <- FALSE
 params$quiet                     <- TRUE
 params$region <- "eastern_us"
 params$plotting_xlim <- c(-107, -65)
+params$extent_time <-
+  data.frame(
+    period = params$period,
+    tgrid_min = params$tgrid_min,
+    tgrid_max = params$tgrid_max,
+    year_min = min(params$years),
+    year_max = max(params$years)
+  )
 
-# Packages ----
+####
+#### Load packages -------------------------------------------------------------
+####
 # Install an older version of dggridR from source. See:
 # https://github.com/r-barnes/dggridR/issues/63#issuecomment-1454929653
 remotes::install_github("r-barnes/dggridR", ref = "ec2a040")
@@ -64,8 +74,9 @@ library(rgee)
 cmdstanr::check_cmdstan_toolchain()
 assert_that(cmdstanr::cmdstan_version() >= "2.31")
 
-
-# misc-setup ----
+####
+#### Color scales / themes -------------------------------------------------------------
+####
 # set color scales
 cols_bd <- c(hsv(seq(0,.17,length.out = 100),1,seq(.9,.6,length.out = 100)), hsv(seq(.45,.65, length.out = 100),1,seq(.6,1,length.out = 100)))
 cols_bd2 <- c(hsv(seq(0,.17,length.out = 100),seq(1, .2, length.out = 100),.9), hsv(seq(.45,.65, length.out = 100),seq(.2, 1, length.out = 100),.9))
@@ -83,6 +94,9 @@ blank_theme <-
         axis.title.y = element_blank()
   )
 
+####
+#### Regions of interest -------------------------------------------------------------
+####
 western_states <- c("arizona", "california", "colorado", "idaho", "montana",
                     "nevada", "new mexico", "oregon", "utah", "washington",
                     "wyoming")
@@ -107,29 +121,20 @@ raster_of_interest <- fasterize::fasterize(region_of_interest,
                                    raster::raster(ncol=1000, nrow = 1000,
                                                   xmn = -125, xmx = -66,
                                                   ymn =24, ymx = 50))
-
-# define time extent ----
-# we can't define this in the run params because years isn't yet defined
-extent_time <-
-  data.frame(
-    period = params$period,
-    tgrid_min = params$tgrid_min,
-    tgrid_max = params$tgrid_max,
-    year_min = min(params$years),
-    year_max = max(params$years)
-  )
-
-# create dggrids----
-
+####
+#### Define hexagon grids -------------------------------------------------------------
+####
 # for an area of ~ 70000 km^2, we get a resolution of 6:
 grid_large <- dggridR::dgconstruct(area = params$hexagon_area_large)
 # for an area of ~ 300 km^2, we get a resolution of 11:
 grid_small <- dggridR::dgconstruct(area = params$hexagon_area_small)
 
-# species info ----
+####
+#### Import checklists -------------------------------------------------------------
+####
+# print some species info
 ebirdst::ebirdst_runs %>% filter(substr(species_code,1,6) %in% species_codes$six)
 
-# import checklists----
 checklists_path <- paste0(params$output_path, "/checklists.RDS")
 filtered_checklists_path <- paste0(params$output_path, "/filtered_checklists.RDS")
 
@@ -173,8 +178,9 @@ if(params$always_filter_checklists | !file.exists(filtered_checklists_path)){
 # extract unique large hexagons
 cells_all <- unique(checklists$seqnum_large)
 
-# bootstrap-abundance ----
-
+####
+#### Bootstrap abundances  -------------------------------------------------------------
+####
 for(species_code in params$species_to_process){
   file_out <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
 
@@ -182,7 +188,7 @@ for(species_code in params$species_to_process){
     data <-
       sample_grid_abun(
         species_code, params$erd_path, checklists, params$effort_thresholds,
-        params$extent_space, extent_time, time_window="full",
+        params$extent_space, params$extent_time, time_window="full",
         small_grid=grid_small$res, large_grid=grid_large$res, time_grid=7,
         roi = raster_of_interest, quiet = FALSE
       )
@@ -191,8 +197,9 @@ for(species_code in params$species_to_process){
   }
 }
 
-# Calculate spring/fall log-ratios ----
-
+####
+#### Calculate demographic indices (spring/fall log-ratios)  ------------------------------------------------------
+####
 for(species_code in params$species_to_process){
   ##### load abundance data
   file_species <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
@@ -212,7 +219,9 @@ for(species_code in params$species_to_process){
   saveRDS(tidy_ratios, paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 }
 
-# plot demographic indices for specific cells ----
+####
+#### Plot demographic indices ------------------------------------------------------
+####
 
 species_code="carwre"
 tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
@@ -226,9 +235,10 @@ tidy_ratios$summary %>%
 # plot selected cell 20 (example)
 plot_ratios(cells_select[20], data=tidy_ratios$summary)
 
-# check normality assumptions ----
+####
+#### Verify normality assumptions ------------------------------------------------------
+####
 # Check the higher moments of the abundance log-ratios to verify adequacy of Gaussian approximations.
-
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
   # excess kurtosis = kurtosis - 3
@@ -243,8 +253,9 @@ for(species_code in params$species_to_process){
     ggtitle(species_code)
 }
 
-# compare recruitment/mortality variances ----
-
+####
+#### Compare recruitment vs mortality variances  ------------------------------------------------------
+####
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
@@ -263,8 +274,9 @@ for(species_code in params$species_to_process){
   }
 }
 
-
-# plot variances ----
+####
+#### Plot variances  ------------------------------------------------------
+####
 
 # helper function to plot cells on a map
 plot_cells_on_map <- function(data, param, color_scale){
@@ -305,6 +317,7 @@ for(species_code in params$species_to_process){
 
   # plot number of years with a productivity index
   p=plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)
+
   print(p)
   # plot number of years with a survival index
   p=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)
@@ -318,14 +331,15 @@ for(species_code in params$species_to_process){
     geom_sf(data=region_of_interest, fill=NA, color="black") +
     geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
     geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
-    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl)) +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
     xlim(params$plotting_xlim)
   print(p)
 }
 
+####
+#### Compare bayesian/frequentist averages  ------------------------------------------------------
+####
 
-
-# compare bayesian/frequentist averages ----
 # Quick comparisons of inverse-sd weighted averages and the Bayesian estimates.
 # Using the last generated `tidy_ratios` object for now.
 
@@ -342,7 +356,9 @@ tidy_ratios$summary %>%
 data_cell <- left_join(data_cell,data_compare_ratios,by="cell")
 
 
-# Download or load weather data ---
+####
+#### Load weather data  ------------------------------------------------------
+####
 dir.create(paste0(params$output_path, "/weather"), showWarnings = FALSE)
 weather_file <- paste0(params$output_path, "/weather/",paste0(params$daymet$label, collapse = "-"),".rds")
 
@@ -370,8 +386,9 @@ if(params$always_download_weather | !file.exists(weather_file)){
 # Perform the regressions of fluctuations (from a single cell, single season,
 # across years) against weather variables.
 
-
-# run weather regressions ----
+####
+#### Weather regressions  ------------------------------------------------------
+####
 for(species_code in params$species_to_process){
   regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
   dir.create(regression_save_path, recursive = TRUE, showWarnings = FALSE)
@@ -388,8 +405,10 @@ for(species_code in params$species_to_process){
   }
 }
 
+####
+#### Plot weather regressions------------------------------------------------------
+####
 
-# plot weather regressions ----
 # select a species:
 species_code="carwre"
 # load the data for that species:
@@ -397,7 +416,7 @@ regression_save_path <- paste0(params$output_path, "/regression_results/", speci
 data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
 
 # plot function for regression data:
-plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", alpha="auto", labels=FALSE) {
+plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", alpha="auto", labels=FALSE, colors=cols_bd) {
   assert_that(moment %in% names(data),msg=paste("column",variable,"not found in data"))
   assert_that(label_daymet %in% unique(data_regression$label),msg=paste("daymet variable",variable,"not found in data"))
   data <- filter(data, label==label_daymet)
@@ -423,11 +442,21 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
     geom_sf(data=region_of_interest, fill=NA, color="black")   +
     geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = !!sym(moment)), alpha=grid_data$alpha) +
     geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
-    scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits=fill_lim) + xlim(x_lim)
+    scale_fill_gradientn(colours = colors, na.value=NA, limits=fill_lim, oob=scales::squish) + xlim(x_lim)
   if(labels) p = p + geom_text(aes(x=long,y=lat,label=cell), data=data_label)
   print(p)
   p
 }
+
+# plot excess kurtosis and skewness of the regression coefficient posterior:
+data_regression %>%
+  mutate(excess_kurtosis=kurtosis-3) %>%
+  pivot_longer(c(skewness, excess_kurtosis)) %>%
+  group_by(label,name) %>%
+  ggplot(aes(value)) +
+  geom_histogram() +
+  facet_wrap(c("name","label"))
+
 
 # plot number of years of data on which the regression was based
 # also add the cell number labels
