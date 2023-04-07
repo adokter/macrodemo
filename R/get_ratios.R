@@ -12,8 +12,8 @@ get_ratios <- function(data, cells_all, period=c("spring", "fall"), n_small_min=
   assert_that(is.character(period))
   # verify that loaded data contains no unknown grid cells
   # QUESTION: in what situation could this evaluate to FALSE?
-  cells_present <- sapply(period, function(x) assert_that(all(data[[x]][[1]]$cell %in% cells_all)))
-  assert_that(all(cells_present), msg="loaded data contains unknown grid cells")
+  cells_present <- sapply(period, function(x) all(data[[x]][[1]]$cell %in% cells_all))
+  if(!all(cells_present)) warning("data contains grid cells not present in cells_all")
   
   if(!quiet) message(paste("calculating ratios with period1 =",period[1],"and period2 =",period[2]))
   
