@@ -460,9 +460,9 @@ data_regression %>%
 
 # plot number of years of data on which the regression was based
 # also add the cell number labels
-plot_regression(data_regression, "tmax_winter", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
-plot_regression(data_regression, "swe", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
-plot_regression(data_regression, "tmax_summer", "n", params$plotting_xlim, fill_lim=c(4,15), alpha=.8, labels=TRUE)
+plot_regression(data_regression, "tmax_winter", "n", params$plotting_xlim, fill_lim=c(0,15), alpha=.8, labels=TRUE, colors=viridisLite::viridis(100))
+plot_regression(data_regression, "swe", "n", params$plotting_xlim, fill_lim=c(0,15), alpha=.8, labels=TRUE, colors=viridisLite::viridis(100))
+plot_regression(data_regression, "tmax_summer", "n", params$plotting_xlim, fill_lim=c(0,15), alpha=.8, labels=TRUE, colors=viridisLite::viridis(100))
 
 # plot the mean regression slopes
 plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim, alpha=.8)
