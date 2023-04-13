@@ -491,11 +491,10 @@ plot_regression(data_regression, "swe", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim)
 
 ####
-#### Smoothing using ICAR/CAR models ------------------------------------------------------
+#### Smoothing using ICAR/CAR models: latitude regression----------------------------------------------
 ####
 
-
-# prepare CAR model data from weather ragression data
+# prepare CAR model data from weather regression data
 data_regression %>%
   mutate(lat = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lat_deg,
          lon = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lon_deg) %>%
@@ -504,6 +503,7 @@ data_regression %>%
   filter(!(lat > 38.7 & lon < -99.5)) %>%
   filter(!is.na(mean)) %>%
   group_by(label) %>%
+  # rescale the data (to help with model convergence)
   mutate(slope_scaled = scale(`mean`),
          lat_scaled = scale(lat),
          known_se = `sd`/sd(`mean`)) -> car_data
@@ -585,87 +585,103 @@ ggplot(q_frame) + theme_classic() +
   ylim(c(-.5, .5))
 
 
-# ICAR model without latitude
-icar_fit <-
-  brm(slope_scaled | resp_se(known_se, sigma = TRUE) ~
-        car(M, gr = cell, type = "icar"),
-      data = car_data_select,
-      data2 = list(M = adjacency_mat),
-      backend = 'cmdstanr',
-      iter = 12000, warmup = 2000, cores = 4, refresh = 0)
-summary(icar_fit)
+####
+#### Smoothing using ICAR/CAR models: smoothed maps----------------------------------------------
+####
 
-npt <- nrow(car_data_select)
-true_values <- matrix(nrow = 40000, ncol = npt)
-for(i in 1:npt) {
-  print(i)
-  # the (unsmoothed) posterior slope:
-  M <- car_data_select$slope_scaled[i]
-  # the posterior uncertainty from the weather regression:
-  se <- car_data_select$known_se[i]
-  # get posterior draws of the linear predictor
-  # re.form=NULL (default), i.e. include all group-level effects
-  # incl_autor=TRUE (default), i.e. include correlation structures in prediction
-  LP <-  posterior_linpred(icar_fit, re.form = NULL, incl_autocor = T)[ , i]
-  # get draws of the unobserved latent uncertainty:
-  sigma <- as_draws_df(icar_fit)$sigma
-  # error propagation, combining sigma form CAR model and se from weather regression
-  # QUESTION: why the linear predictor here
-  mu = (M*sigma^2 + LP * se^2)/(sigma^2 + se^2)
-  scale = 1/sqrt(1/sigma^2 + 1/se^2)
-  true_values[ , i] <- rnorm(40000, mu, scale)
+icar_regression <- function(data, adjancency_mat, warmup=2000, cores=4, iter=12000){
+  assert_that(nrow(adjacency_mat) == ncol(adjacency_mat))
+  assert_that(nrow(data) == nrow(adjacency_mat))
+  # ICAR model without latitude
+  print("Estimating icar model ...")
+  icar_fit <-
+    brm(slope_scaled | resp_se(known_se, sigma = TRUE) ~
+          car(M, gr = cell, type = "icar"),
+        data = data,
+        data2 = list(M = adjacency_mat),
+        backend = 'cmdstanr',
+        iter = iter, warmup = warmup, cores = cores, refresh = 0)
+  # number of cells:
+  npt <- nrow(data)
+  # number of posterior draws:
+  n_samples = cores*(iter-warmup)
+  # initialize matrix to contain posterior draws for each cell:
+  true_values <- matrix(nrow = n_samples, ncol = npt)
+
+  print("Drawing from posterior ...")
+  for(i in 1:npt) {
+    print(paste("cell",i,"/",npt,"..."))
+    # the (unsmoothed) posterior slope:
+    M <- data$slope_scaled[i]
+    # the posterior uncertainty from the weather regression:
+    se <- data$known_se[i]
+    # get posterior draws of the linear predictor
+    # re.form=NULL (default), i.e. include all group-level effects
+    # incl_autor=TRUE (default), i.e. include correlation structures in prediction
+    LP <-  posterior_linpred(icar_fit, re.form = NULL, incl_autocor = T)[ , i]
+    # get draws of the unobserved latent uncertainty:
+    sigma <- as_draws_df(icar_fit)$sigma
+    # error propagation, combining sigma form CAR model and se from weather regression
+    # QUESTION: why the linear predictor here
+    mu = (M*sigma^2 + LP * se^2)/(sigma^2 + se^2)
+    scale = 1/sqrt(1/sigma^2 + 1/se^2)
+    true_values[ , i] <- rnorm(n_samples, mu, scale)
+  }
+  unscale <- function(x){x + mean(data$mean)/sd(data$mean)}
+  smooth_prob=apply(true_values, 2,function(x){mean(unscale(x) > 0)})
+  smooth_mean=apply(true_values, 2,function(x){mean(unscale(x))})
+  smooth_data=data.frame(cell=data$cell, smooth_prob=smooth_prob, smooth_mean=smooth_mean)
+  output_data <- merge(data,smooth_data, by = "cell")
+  output_data
 }
 
-smooth_prob <-
-  data.frame(
-    cell = car_data_select$cell,
-    smooth_prob =
-      apply(
-        true_values, 2,
-        function(x){
-          mean(
-            x +  mean(car_data_select$mean)/
-              sd(car_data_select$mean) > 0
-          )
-        }
-      )
-  )
-smooth_mean <-
-  data.frame(
-    cell = car_data_select$cell,
-    smooth_mean =
-      apply(true_values, 2,
-            function(x){
-              mean(x) +
-                mean(car_data_select$mean)/
-                sd(car_data_select$mean
-                )
-            }
-      )
-  )
+# plots the mean probability for a nonzero effect
+plot_smooth_prob <- function(grid_data, region_of_interest){
+  ggplot() + coord_fixed() + blank_theme +
+    geom_sf(data=region_of_interest, fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_prob), alpha = .8)   +
+    geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1), oob=scales::squish) +
+    xlim(params$plotting_xlim)
+}
 
+# plots the mean smoothed effect size, with opacity according to probability
+plot_smooth_mean <- function(grid_data, region_of_interest){
+  fl <- max(abs(grid_data$smooth_mean), na.rm = T) + .1
+  ggplot() + coord_fixed() + blank_theme +
+    geom_sf(data=region_of_interest, fill=NA, color="black")   +
+    geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
+    geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
+    scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
+    xlim(params$plotting_xlim)
+}
 
-plotting_data3 <- merge(car_data_select, smooth_prob, by = "cell") |>
-  merge(smooth_mean, by = "cell")
+merge_grid_to_data <- function(data, grid_large){
+  grid <- dggridR::dgcellstogrid(grid_large,data$cell,frame=TRUE,wrapcells=TRUE)
+  grid <- merge(grid,data,by=c("cell"))
+  # remove smoothed data equal to NA
+  grid[!is.na(grid$smooth_prob), ]
+}
 
-grid <- dggridR::dgcellstogrid(grid_large,plotting_data3$cell,frame=TRUE,wrapcells=TRUE)
-grid3  <- merge(grid,plotting_data3,by="cell")
+# tmax_winter
+car_data %>% filter(label=="tmax_winter") -> car_data_select
+adjacency_mat <- get_adjacency_matrix(car_data_select$cell, grid_large)
+icar_smooth_tmax_winter <- icar_regression(car_data_select, adjacency_mat)
+grid_data <- merge_grid_to_data(icar_smooth_tmax_winter, grid_large)
+plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
+plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
 
-grid_data <- grid3[!is.na(grid3$smooth_prob), ]
-p <- ggplot() + coord_fixed() + blank_theme +
-  geom_sf(data=region_of_interest, fill=NA, color="black")   +
-  geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_prob), alpha = .8)   +
-  geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
-  scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0,1), oob=scales::squish) +
-  xlim(params$plotting_xlim)
-print(p)
+# tmax_summer
+car_data %>% filter(label=="tmax_summer") -> car_data_select
+adjacency_mat <- get_adjacency_matrix(car_data_select$cell, grid_large)
+icar_smooth_tmax_summer <- icar_regression(car_data_select, adjacency_mat)
+grid_data <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
+plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
+plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
 
-fl <- max(abs(grid_data$smooth_mean), na.rm = T) + .1
-p <- ggplot() + coord_fixed() + blank_theme +
-  geom_sf(data=region_of_interest, fill=NA, color="black")   +
-  geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
-  geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
-  scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
-  xlim(params$plotting_xlim)
-p
-
+# swe
+car_data %>% filter(label=="swe") -> car_data_select
+icar_smooth_swe <- icar_regression(car_data_select, adjacency_mat)
+grid_data <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
+plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
+plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
