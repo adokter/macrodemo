@@ -31,6 +31,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
   # initialize return values
   p_survival_variance_higher=NA
   effect_size_log=NA
+  effect_size_sd=NA
   prod_mean=NA
   surv_mean=NA
 
