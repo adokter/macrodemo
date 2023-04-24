@@ -38,3 +38,8 @@ a data.frame with regression results
 \description{
 Perform weather regressions.
 }
+\details{
+The Daymet predictor Snow Water Equivalent (\code{swe}) is root-transformed to meet normality assumptions.
+For \code{swe} we also require we also at least two years with nonzero snow, otherwise the regression for
+that cell will be skipped.
+}

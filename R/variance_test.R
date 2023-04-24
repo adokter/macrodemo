@@ -66,7 +66,12 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
       # p_survival_variance_higher is the probability that the variance in survival
       # is larger than the variance in productivity
 
+      # effect size (log scale)
       effect_size_log <- mean(d$b_sigma_seasonsurv)
+
+      # standard deviation (log scale)
+      effect_size_sd <- sd(d$b_sigma_seasonsurv)
+
       # this is also
       # effect_size_log calculated as the mean estimated posterior effect
       # equals the slope (b) for sigma when season equals survival, i.e. the log-scale difference between seasons
@@ -83,7 +88,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
     if(!quiet) print(paste("insufficient ratios available for cell",cell_index))
   }
 
-  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log, prod_mean=prod_mean, surv_mean=surv_mean))
+  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log, effect_size_sd=effect_size_sd, prod_mean=prod_mean, surv_mean=surv_mean))
 }
 
 #' perform formal test of whether productivity or survival variance is larger
