@@ -47,7 +47,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
       data_regression <- tidy_ratio_series %>%
         filter(cell==cells_all[i]) %>%
         filter(period==period_demographic) %>%
-        filter(!is.na(avg))
+        filter(is.finite(avg))
       # add column `predictor` containing a copy of the data we want to regress:
       data_regression$predictor=data_regression[[par]]
 
