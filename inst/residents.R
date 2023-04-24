@@ -24,7 +24,7 @@ params$hexagon_area_small <- 300
 params$n_small_min <- 10
 params$n_year_min <- 5
 params$daymet <- data.frame( label=c("tmax_winter","tmax_summer","swe"), variable=c("tmax","tmax","swe"), date_min=c("01-01","07-01","12-01"), date_max=c("02-28","08-31","03-15"), period=c("spring","fall","spring") )
-params$species_to_process <- c("carwre")
+params$species_to_process <- c("carwre", "norcar")
 params$always_import_checklists  <- FALSE
 params$always_filter_checklists  <- FALSE
 params$always_resample_bootstrap <- FALSE
@@ -68,6 +68,7 @@ library(ebirdst)
 library(fasterize)
 library(dggridR)
 library(rgee)
+library(tidyr)
 
 # this package also needs a working version of rcmdstan:
 # see https://mc-stan.org/cmdstanr/
@@ -200,6 +201,7 @@ for(species_code in params$species_to_process){
 ####
 #### Calculate demographic indices (spring/fall log-ratios)  ------------------------------------------------------
 ####
+
 for(species_code in params$species_to_process){
   ##### load abundance data
   file_species <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
@@ -223,7 +225,7 @@ for(species_code in params$species_to_process){
 #### Plot demographic indices ------------------------------------------------------
 ####
 
-species_code="carwre"
+species_code <- c("carwre", "norcar")
 tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
 # select cells with at least 20 valid ratios
@@ -233,7 +235,7 @@ tidy_ratios$summary %>%
   filter(sufficient_data) %>% pull(cell) -> cells_select
 
 # plot selected cell 20 (example)
-plot_ratios(cells_select[20], data=tidy_ratios$summary)
+plot_ratios(cells_select[10], data=tidy_ratios$summary)
 
 ####
 #### Verify normality assumptions ------------------------------------------------------
@@ -289,6 +291,9 @@ plot_cells_on_map <- function(data, param, color_scale){
     xlim(params$plotting_xlim)
 }
 
+plot1 <- list()
+plot2 <- list()
+
 for(species_code in params$species_to_process){
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   cell_lrat_sd <- readRDS(var_save_path)
@@ -311,30 +316,39 @@ for(species_code in params$species_to_process){
     left_join(plotting_data, by="cell") -> grid2
 
   # define color scales
-  scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years) - 1))
+  scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years)))
   scale_blue_red <- scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0, 1))
   fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
 
+  
   # plot number of years with a productivity index
-  p=plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)
+  p1<- plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)
 
-  print(p)
+  print(p1)
   # plot number of years with a survival index
-  p=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)
-  print(p)
+  p2=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)
+  print(p2)
   # plot probability that survival variance is higher than productivity
-  p=plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)
-  print(p)
+  p3=plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)
+  print(p3)
   # plot the difference in survival and recruitment variance (log-effect size)
   # scale opacity by the probability that the survival variance is higher.
-  p=ggplot() + coord_fixed() + blank_theme +
+  p4=ggplot() + coord_fixed() + blank_theme +
     geom_sf(data=region_of_interest, fill=NA, color="black") +
     geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
     geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
     xlim(params$plotting_xlim)
-  print(p)
+  print(p4)
+  
+plot1[[species_code]] <- gridExtra::grid.arrange(p1, p2, ncol=1, nrow=2, top=species_code)
+plot2[[species_code]] <- gridExtra::grid.arrange(p3, top=species_code)
+
 }
+
+do.call(gridExtra::grid.arrange, c(plot1, ncol=2))
+do.call(gridExtra::grid.arrange, c(plot2, ncol=2))
+
 
 ####
 #### Compare bayesian/frequentist averages  ------------------------------------------------------
@@ -366,22 +380,73 @@ if(!params$quiet) print(paste("loading/processing weather file",basename(weather
 
 # Warning messages below are from `erdPackage::daymet_extract` which calls
 # `sp::getSpPPolygonsIDSlots`, which raises the deprecation warning
-if(params$always_download_weather | !file.exists(weather_file)){
+# if(params$always_download_weather | !file.exists(weather_file)){
+#   # initialize google earth engine
+#   ee_Initialize()
+# 
+#   # loop over cells and years
+#   data_daymet=data.frame()
+#   for (cell in cells_all) {
+#     for (year in params$years){
+#       print(paste("year = ",year,"cell = ",cell))
+#       data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
+#       
+#     }
+#   }
+#   saveRDS(data_daymet, weather_file)
+# } else{
+#   data_daymet <- readRDS(weather_file)
+# }
+
+
+flag_file <- paste0(params$output_path, "/weather/flag.rds")
+
+if (params$always_download_weather | !file.exists(weather_file) | !file.exists(flag_file)) {
   # initialize google earth engine
   ee_Initialize()
-
+  
+  # load or create flag variable to indicate whether data extraction was successful or not
+  flag <- if (file.exists(flag_file)) readRDS(flag_file) else data.frame(cell = character(), year = integer(), success = logical())
+  
+  # check if weather file exists and load data
+  data_daymet <- if (file.exists(weather_file)) readRDS(weather_file) else data.frame()
+  
   # loop over cells and years
-  data_daymet=data.frame()
   for (cell in cells_all) {
-    for (year in params$years){
-      print(paste("year = ",year,"cell = ",cell))
-      data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
+    for (year in params$years) {
+      # check if data extraction was successful for this cell and year
+      if (nrow(flag) == 0 || !any(flag$success[flag$cell == cell & flag$year == year])) {
+        # attempt data extraction
+        tryCatch({
+          print(paste("year =", year, "cell =", cell))
+          data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
+          
+          # update flag variable to indicate success
+          flag <- rbind(flag, data.frame(cell = cell, year = year, success = TRUE))
+          saveRDS(flag, flag_file)
+          
+          # save weather data after each iteration of the inner loop
+          saveRDS(data_daymet, weather_file)
+        }, error = function(e) {
+          # if an error occurred during data extraction, print an error message
+          message(paste("Error occurred for year =", year, "cell =", cell))
+          # update flag variable to indicate failure
+          flag <- rbind(flag, data.frame(cell = cell, year = year, success = FALSE))
+          saveRDS(flag, flag_file)
+        })
+      }
     }
   }
-  saveRDS(data_daymet, weather_file)
-} else{
+} else {
+  # load weather data if always_download_weather is false and the weather file exists
   data_daymet <- readRDS(weather_file)
 }
+
+
+
+
+
+
 
 # Perform the regressions of fluctuations (from a single cell, single season,
 # across years) against weather variables.
@@ -399,7 +464,7 @@ for(species_code in params$species_to_process){
     file_path <- paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds")
     tidy_ratios <- readRDS(file_path)
 
-    data_regression <- weather_regressions(tidy_ratios, data_daymet,params$daymet,params$n_year_min, quiet=TRUE)
+    data_regression <- weather_regressions(tidy_ratios, data_daymet,params$daymet,params$n_year_min, quiet=FALSE)
 
     saveRDS(data_regression, paste0(regression_save_path, "/regressions.rds"))
   }
@@ -445,13 +510,13 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
     scale_fill_gradientn(colours = colors, na.value=NA, limits=fill_lim, oob=scales::squish) + xlim(x_lim)
   if(labels) p = p + geom_text(aes(x=long,y=lat,label=cell), data=data_label)
   print(p)
-  p
+
 }
 
 # plot excess kurtosis and skewness of the regression coefficient posterior:
 data_regression %>%
   mutate(excess_kurtosis=kurtosis-3) %>%
-  pivot_longer(c(skewness, excess_kurtosis)) %>%
+  tidyr::pivot_longer(c(skewness, excess_kurtosis)) %>%
   group_by(label,name) %>%
   ggplot(aes(value)) +
   geom_histogram() +
@@ -525,7 +590,7 @@ car_data %>%
   mutate(upper=slope_scaled+known_se) %>%
   mutate(lat_jit = lat + rnorm(n(), 0, .5)) -> car_data_select
 
-get_adjacency_matrix(car_data_select$cell, grid_large) -> adjacency_mat
+macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large) -> adjacency_mat
 
 icar_fit_lat <-
   brm(
@@ -665,7 +730,7 @@ merge_grid_to_data <- function(data, grid_large){
 
 # tmax_winter
 car_data %>% filter(label=="tmax_winter") -> car_data_select
-adjacency_mat <- get_adjacency_matrix(car_data_select$cell, grid_large)
+adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
 icar_smooth_tmax_winter <- icar_regression(car_data_select, adjacency_mat)
 grid_data <- merge_grid_to_data(icar_smooth_tmax_winter, grid_large)
 plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
@@ -673,7 +738,7 @@ plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
 
 # tmax_summer
 car_data %>% filter(label=="tmax_summer") -> car_data_select
-adjacency_mat <- get_adjacency_matrix(car_data_select$cell, grid_large)
+adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
 icar_smooth_tmax_summer <- icar_regression(car_data_select, adjacency_mat)
 grid_data <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
 plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
@@ -681,7 +746,11 @@ plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
 
 # swe
 car_data %>% filter(label=="swe") -> car_data_select
+adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
 icar_smooth_swe <- icar_regression(car_data_select, adjacency_mat)
-grid_data <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
+grid_data <- merge_grid_to_data(icar_smooth_swe, grid_large)
 plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
 plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
+
+
+
