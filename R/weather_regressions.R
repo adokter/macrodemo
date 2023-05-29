@@ -18,7 +18,8 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
 
   tidy_ratio_series <- tidy_ratios$summary %>%
     filter(cell != 233) %>% # cell 233 is out over open ocean
-    left_join(data_daymet, by=c("cell","year")) # add weather data
+    left_join(data_daymet, by=c("cell","year")) %>%  # add weather data
+    filter(complete.cases(.)) # this bit has been added by BG! Check if it has consequence on downstream analyses.
 
   years=unique(tidy_ratios$summary$year)
   years_len <- length(years) - 1
