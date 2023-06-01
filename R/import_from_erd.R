@@ -15,7 +15,7 @@ import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Wor
   
   if (is.null(checklists)) {
     message("querying checklists")
-    checklists <- import_checklists1(checklists_parquet_path = checklists_parquet_path)
+    checklists <- import_checklists(checklists_parquet_path = checklists_parquet_path)
   }
   
   if (is.null(obs)) {
