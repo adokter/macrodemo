@@ -8,7 +8,6 @@
 #'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci
 #' @export
 
-
 import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db", 
                              checklists = NULL, obs = NULL) {
   
