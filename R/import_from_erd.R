@@ -7,9 +7,7 @@
 #'    as well as additional columns for latitude, longitude, year, month, day_of_year, hours_of_day,
 #'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci
 #' @export
-
-import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db", 
-                             checklists = NULL, obs = NULL) {
+import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db", checklists = NULL, obs = NULL) {
   
   db <- arrow::open_dataset(erd_path) 
   
@@ -39,7 +37,6 @@ import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Wor
   
   return(zf)
 }
-
 
 
 #' Import checklists data from the erd
