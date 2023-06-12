@@ -25,7 +25,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
     filter(n_prod>=n_ratio_min) %>%
     filter(n_surv>=n_ratio_min) %>%
     filter(is.finite(avg)) %>%
-    filter(!has_inf) %>%
+#    filter(!has_inf) %>%
     mutate(ratio=avg)
 
   # initialize return values
