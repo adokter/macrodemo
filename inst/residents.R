@@ -7,8 +7,8 @@ if(Sys.info()[["user"]]=="amd427"){
   params$erd_path <- "~/Dropbox/macrodemography/erd/erd.db"
   params$output_path <- "~/Dropbox/macrodemography_refactor/data/residents"
 } else if(Sys.info()[["user"]]=="bg423"){
-  params$erd_path <- "~/Documents/erd/erd.db"
-  params$output_path <- "~/Documents/macrodemography/data/"
+  params$erd_path <- "~/Documents/macrodemography/data/erd.db"
+  params$output_path <- "~/Documents/macrodemography/data"
 }
 params$years <- c(2006:2019)
 params$extent_space <-  data.frame( min_lon=-125, max_lon=-66, min_lat=24, max_lat=50 )
@@ -23,7 +23,11 @@ params$hexagon_area_large <- 70000
 params$hexagon_area_small <- 300
 params$n_small_min <- 10
 params$n_year_min <- 5
-params$daymet <- data.frame( label=c("tmax_winter","tmax_summer","swe"), variable=c("tmax","tmax","swe"), date_min=c("01-01","07-01","12-01"), date_max=c("02-28","08-31","03-15"), period=c("spring","fall","spring") )
+params$daymet <- data.frame( label=c("tmax_winter","tmax_summer","swe"),
+                             variable=c("tmax","tmax","swe"),
+                             date_min=c("01-01","07-01","12-01"),
+                             date_max=c("02-28","08-31","03-15"),
+                              period=c("spring","fall","spring") )
 params$species_to_process <- c("carwre", "norcar")
 params$always_import_checklists  <- FALSE
 params$always_filter_checklists  <- FALSE
@@ -293,6 +297,8 @@ plot_cells_on_map <- function(data, param, color_scale){
 
 plot1 <- list()
 plot2 <- list()
+plot3 <- list()
+plot4 <- list()
 
 for(species_code in params$species_to_process){
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
@@ -318,19 +324,24 @@ for(species_code in params$species_to_process){
   # define color scales
   scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years)))
   scale_blue_red <- scale_fill_gradientn(colours = cols_bd2, na.value=NA, limits = c(0, 1))
-  fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
+#  fl <- max(abs(grid2$effect_size_log), na.rm = T) + .1
+  fl <- 6.7
 
-  
   # plot number of years with a productivity index
-  p1<- plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)
-
+  p1<- plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)+theme(legend.position = "none")+
+    theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   print(p1)
+
   # plot number of years with a survival index
-  p2=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)
+  p2=plot_cells_on_map(grid2, "n_surv", color_scale=scale_viridis)+theme(legend.position = "none")+
+    theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   print(p2)
+
   # plot probability that survival variance is higher than productivity
-  p3=plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)
+  p3=plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)+
+    theme(legend.position = "none")+ theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
   print(p3)
+
   # plot the difference in survival and recruitment variance (log-effect size)
   # scale opacity by the probability that the survival variance is higher.
   p4=ggplot() + coord_fixed() + blank_theme +
@@ -338,16 +349,79 @@ for(species_code in params$species_to_process){
     geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
     geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
-    xlim(params$plotting_xlim)
+    xlim(params$plotting_xlim)+theme(legend.position = "none")
   print(p4)
-  
-plot1[[species_code]] <- gridExtra::grid.arrange(p1, p2, ncol=1, nrow=2, top=species_code)
-plot2[[species_code]] <- gridExtra::grid.arrange(p3, top=species_code)
+
+plot1[[species_code]] <- gridExtra::grid.arrange(p1)
+plot2[[species_code]] <- gridExtra::grid.arrange(p2)
+plot3[[species_code]] <- gridExtra::grid.arrange(p3)
+plot4[[species_code]] <- gridExtra::grid.arrange(p4)
 
 }
 
 do.call(gridExtra::grid.arrange, c(plot1, ncol=2))
 do.call(gridExtra::grid.arrange, c(plot2, ncol=2))
+do.call(gridExtra::grid.arrange, c(plot3, ncol=2))
+do.call(gridExtra::grid.arrange, c(plot4, ncol=2))
+
+
+# re-producing figure 3 of the manuscript
+# ---------------------------------------
+library(cowplot)
+grid1 <- plot_grid(plotlist = plot4, ncol=2, labels = "auto")
+
+# Get legends from one of the plots
+p4 <-
+  ggplot() + coord_fixed() + blank_theme +
+  geom_sf(data=region_of_interest, fill=NA, color="black") +
+  geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+  geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+  scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
+  xlim(params$plotting_xlim)+labs(fill="log-sd difference \n (survival-productivity)")+
+  guides(fill=guide_colorbar(title.position = "right", title.hjust = .5))
+
+legend <- get_legend(p4+theme(legend.key.size = unit(.4, "cm")))
+
+# Add common legend to the plots
+fig3 <- grid.arrange(grid1, right=legend)
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/fig3.png", plot=fig3, width = 22, height= 7, units = "cm")
+
+
+# re-producing figure S3 of the manuscript
+# ---------------------------------------
+library(cowplot)
+grid1 <- plot_grid(plotlist = plot3, ncol=2, labels = "auto")
+
+# Get legends from one of the plots
+legend <- get_legend(plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)+
+                       labs(fill="p(survival)")+theme(legend.key.size = unit(.4, "cm")))
+
+# Add common legend to the plots
+figS3 <- grid.arrange(grid1, right=legend)
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/figS3_3.png", plot=figS3, width = 22, height= 8, units = "cm")
+
+# # Get legends from one of the plots
+# legend <- get_legend(plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)+
+#                        labs(fill="p(survival)")+theme(legend.position = c(.5, 1.5), legend.direction = "horizontal",
+#                                                       legend.key.width = unit(1, "cm"))+
+#                        guides(fill = guide_colorbar(title.position = "top", title.hjust=.5)))
+#
+# # Add common legend to the plots
+# figS3 <- grid.arrange(grid1, legend, nrow = 2, heights = c(15, 1))
+# ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/figS3_2.png", plot=figS3, width = 22, height= 10, units = "cm")
+
+# re-producing figure S2 of the manuscript
+# ---------------------------------------
+library(cowplot)
+grid1 <- plot_grid(plotlist = c(plot1, plot2), nrow=2, labels = "auto")
+
+# Get legends from one of the plots
+legend <- get_legend(plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridis)+labs(fill="timeseries\nlength (years)")+
+                       scale_fill_viridis_c(limits=c(5,13)))
+
+# Add common legend to the plots
+figS2 <- grid.arrange(grid1, legend, ncol = 2, widths = c(3, .5))
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/figS2.png", plot=figS2, width = 27, height= 17, units = "cm")
 
 
 ####
@@ -383,14 +457,14 @@ if(!params$quiet) print(paste("loading/processing weather file",basename(weather
 # if(params$always_download_weather | !file.exists(weather_file)){
 #   # initialize google earth engine
 #   ee_Initialize()
-# 
+#
 #   # loop over cells and years
 #   data_daymet=data.frame()
 #   for (cell in cells_all) {
 #     for (year in params$years){
 #       print(paste("year = ",year,"cell = ",cell))
 #       data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
-#       
+#
 #     }
 #   }
 #   saveRDS(data_daymet, weather_file)
@@ -404,13 +478,13 @@ flag_file <- paste0(params$output_path, "/weather/flag.rds")
 if (params$always_download_weather | !file.exists(weather_file) | !file.exists(flag_file)) {
   # initialize google earth engine
   ee_Initialize()
-  
+
   # load or create flag variable to indicate whether data extraction was successful or not
   flag <- if (file.exists(flag_file)) readRDS(flag_file) else data.frame(cell = character(), year = integer(), success = logical())
-  
+
   # check if weather file exists and load data
   data_daymet <- if (file.exists(weather_file)) readRDS(weather_file) else data.frame()
-  
+
   # loop over cells and years
   for (cell in cells_all) {
     for (year in params$years) {
@@ -420,11 +494,11 @@ if (params$always_download_weather | !file.exists(weather_file) | !file.exists(f
         tryCatch({
           print(paste("year =", year, "cell =", cell))
           data_daymet <- rbind(data_daymet, daymet_set_extract(year, cell, grid_large, params$daymet))
-          
+
           # update flag variable to indicate success
           flag <- rbind(flag, data.frame(cell = cell, year = year, success = TRUE))
           saveRDS(flag, flag_file)
-          
+
           # save weather data after each iteration of the inner loop
           saveRDS(data_daymet, weather_file)
         }, error = function(e) {
@@ -554,6 +628,113 @@ plot_regression(data_regression, "tmax_summer", "kurtosis", params$plotting_xlim
 plot_regression(data_regression, "tmax_winter", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "swe", "skewness", params$plotting_xlim)
 plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim)
+
+
+
+# Re-producing weather regression figure(s) for ms (Unsmoothed slope + probability)
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code1 in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code1)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # plot the mean regression slopes, with transparency denoting the probability of being non-zero
+  # essentially a combining the previous two types of plots in one figure
+  p1 <- plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim, fill_lim = c(-1,1))+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+  p2 <- plot_regression(data_regression, "swe", "mean", params$plotting_xlim, fill_lim = c(-1,1))+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+  p3 <- plot_regression(data_regression, "tmax_summer", "mean", params$plotting_xlim, fill_lim = c(-1,1))+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code1]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code1]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code1]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_regression(data_regression, "swe", "mean", params$plotting_xlim, fill_lim = c(-1,1))+
+                       labs(fill="estimated regression\nslope (unsmoothed)"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                              ncol = 2, nrow = 3, labels = "auto",
+                   label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_unsmoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
+
+
+# Re-producing weather regression figure(s) for ms (Unmoothed probability)
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code1 in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code1)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # plot the posterior probability that the regression coefficient is larger than zero (p_value)
+p1 <- plot_regression(data_regression, "tmax_winter", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+p2 <- plot_regression(data_regression, "swe", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+p3 <- plot_regression(data_regression, "tmax_summer", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code1]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code1]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code1]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_regression(data_regression, "tmax_winter", "p_value", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+                       labs(fill="posterior probability\nof positive slope\n(unsmoothed model)"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto",
+                   label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_prob_plotArrange_unsmoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
+
 
 ####
 #### Smoothing using ICAR/CAR models: latitude regression----------------------------------------------
@@ -713,6 +894,7 @@ plot_smooth_prob <- function(grid_data, region_of_interest){
 # plots the mean smoothed effect size, with opacity according to probability
 plot_smooth_mean <- function(grid_data, region_of_interest){
   fl <- max(abs(grid_data$smooth_mean), na.rm = T) + .1
+  fl <- 1. # Baagi has changed this for consistency for manuscript!
   ggplot() + coord_fixed() + blank_theme +
     geom_sf(data=region_of_interest, fill=NA, color="black")   +
     geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
@@ -728,29 +910,171 @@ merge_grid_to_data <- function(data, grid_large){
   grid[!is.na(grid$smooth_prob), ]
 }
 
-# tmax_winter
-car_data %>% filter(label=="tmax_winter") -> car_data_select
-adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
-icar_smooth_tmax_winter <- icar_regression(car_data_select, adjacency_mat)
-grid_data <- merge_grid_to_data(icar_smooth_tmax_winter, grid_large)
-plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
-plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
 
-# tmax_summer
-car_data %>% filter(label=="tmax_summer") -> car_data_select
-adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
-icar_smooth_tmax_summer <- icar_regression(car_data_select, adjacency_mat)
-grid_data <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
-plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
-plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
+# First, we need to run ICAR regressions and save both "output data" into respective folders
+
+for(species_code in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # prepare CAR model data from weather regression data
+  data_regression %>%
+    mutate(lat = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lat_deg,
+           lon = dggridR::dgSEQNUM_to_GEO(grid_large, cell)$lon_deg) %>%
+    filter(lon > params$plotting_xlim[1]) %>%
+    # remove a region where we have sparse data
+    #  filter(!(lat > 38.7 & lon < -99.5)) %>%
+    filter(!is.na(mean)) %>%
+    group_by(label) %>%
+    # rescale the data (to help with model convergence)
+    mutate(slope_scaled = scale(`mean`),
+           lat_scaled = scale(lat),
+           known_se = `sd`/sd(`mean`)) -> car_data
+
+  # tmax_winter
+  car_data %>% filter(label=="tmax_winter") -> car_data_select
+  adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
+  icar_smooth_tmax_winter <- icar_regression(car_data_select, adjacency_mat)
+  grid_data_surv_tmax <- merge_grid_to_data(icar_smooth_tmax_winter, grid_large)
+
+  wintT_pval_sm    <- plot_smooth_prob(grid_data = grid_data_surv_tmax, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+  wintT_sl_pval_sm <- plot_smooth_mean(grid_data = grid_data_surv_tmax, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+
+  # tmax_summer
+  car_data %>% filter(label=="tmax_summer") -> car_data_select
+  adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
+  icar_smooth_tmax_summer <- icar_regression(car_data_select, adjacency_mat)
+  grid_data_prod_tmax <- merge_grid_to_data(icar_smooth_tmax_summer, grid_large)
+
+  summerT_pval_sm    <- plot_smooth_prob(grid_data = grid_data_prod_tmax, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+  summerT_sl_pval_sm <- plot_smooth_mean(grid_data = grid_data_prod_tmax, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+
+  # swe
+  car_data %>% filter(label=="swe") -> car_data_select
+  adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
+  icar_smooth_swe <- icar_regression(car_data_select, adjacency_mat)
+  grid_data_surv_snow <- merge_grid_to_data(icar_smooth_swe, grid_large)
+
+  snow_pval_sm    <- plot_smooth_prob(grid_data = grid_data_surv_snow, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+  snow_sl_pval_sm <- plot_smooth_mean(grid_data = grid_data_surv_snow, region_of_interest = region_of_interest)+labs(subtitle = species_code)
+
+
+  # merge and save all output data
+  weatherReg_icar_data <- rbind(grid_data_surv_tmax, grid_data_prod_tmax, grid_data_surv_snow)
+  saveRDS(weatherReg_icar_data, paste0(params$output_path, "/regression_results/", species_code, "/weather_regressions_smoothed.rds"))
+
+}
+
+
+# Re-producing weather regression figure(s) for ms (Smoothed slope + probability)
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code in params$species_to_process) {
+
+# load the data for that species:
+regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
+data_regression <- readRDS(paste0(regression_save_path, "/weather_regressions_smoothed.rds"))
+
+# tmax_winter
+grid_data <- data_regression %>% filter(label=="tmax_winter")
+p1 <- plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
 
 # swe
-car_data %>% filter(label=="swe") -> car_data_select
-adjacency_mat <- macrodemography:::get_adjacency_matrix(car_data_select$cell, grid_large)
-icar_smooth_swe <- icar_regression(car_data_select, adjacency_mat)
-grid_data <- merge_grid_to_data(icar_smooth_swe, grid_large)
-plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)
-plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)
+grid_data <- data_regression %>% filter(label=="swe")
+p2 <- plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
 
+# tmax summer
+grid_data <- data_regression %>% filter(label=="tmax_summer")
+p3 <- plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
+  theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
+                       labs(fill="estimated regression\nslope (smoothed)"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto", label_x = c(.05,.05,.05,.05,.05,.05),
+                                                        label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_Smoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
+
+
+# Re-producing weather regression figure(s) for ms (probability)
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
+  data_regression <- readRDS(paste0(regression_save_path, "/weather_regressions_smoothed.rds"))
+
+  # tmax_winter
+  grid_data <- data_regression %>% filter(label=="tmax_winter")
+  p1 <- plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+  # swe
+  grid_data <- data_regression %>% filter(label=="swe")
+  p2 <- plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+  # tmax summer
+  grid_data <- data_regression %>% filter(label=="tmax_summer")
+  p3 <- plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_smooth_prob(grid_data = grid_data, region_of_interest = region_of_interest)+
+                       labs(fill="posterior probability\nof positive slope\n(smoothed model)"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto", label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_prob_plotArrange_Smoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
