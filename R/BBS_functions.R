@@ -63,7 +63,7 @@ get_bcr_data <- function (data, bcrs, .year, tgrid_min, tgrid_max, time_window =
     cl <- parallel::makeCluster(.cores, "FORK")
     doParallel::registerDoParallel(cl)
     tgrid <- tgrid_min:tgrid_max
-    cell_data <- foreach(t = 1:length(tgrid)) foreach::%dopar% {
+    cell_data <- foreach(t = 1:length(tgrid)) %dopar% {
       get_cell_data(zfd, tgrid[t], all_cells_small)
     }
     parallel::stopCluster(cl = cl)
@@ -135,7 +135,7 @@ get_abun_bcr <- function (sp_data, bcrs, n_rep, .cores = 4)
   big_cells <- unique(cells$cell_large)
   cl <- parallel::makeCluster(.cores, "FORK")
   doParallel::registerDoParallel(cl)
-  tgrid_list <- foreach(t = seq_along(sp_data)) foreach::%dopar% {
+  tgrid_list <- foreach(t = seq_along(sp_data)) %dopar% {
     get_abun_tgrid_slice(sp_data, t, cells, big_cells, n_rep)
   }
   parallel::stopCluster(cl = cl)
