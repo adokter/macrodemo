@@ -13,7 +13,7 @@
 #' @return abundance data
 #' @export
 get_bcr_data <- function (data, bcrs, .year, tgrid_min, tgrid_max, time_window = "full",
-                          min_lat, max_lat, min_lon, small_grid = 11,
+                          min_lat, max_lat, min_lon, max_lon, small_grid = 11,
                           .cores = 4)
 {
   bcrs <- sf::st_transform(bcrs, 4326)
@@ -21,7 +21,7 @@ get_bcr_data <- function (data, bcrs, .year, tgrid_min, tgrid_max, time_window =
   zfd <- data |>
     dplyr::filter(year == .year) |>
     dplyr::filter(latitude > min_lat & latitude < max_lat) |>
-    dplyr::filter(longitude > min_lon) |>
+    dplyr::filter(longitude > min_lon & longitude < max_lon) |>
     merge(get_tgrid(), by = "day_of_year", all = F) |>
     filter(tgrid >= tgrid_min & tgrid <= tgrid_max)
 

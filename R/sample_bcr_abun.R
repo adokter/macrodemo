@@ -14,10 +14,10 @@
 #' @param quiet if TRUE, suppress informational messages (warnings/errors still returned)
 #' @return large list object
 #' @export
-sample_grid_abun_bcr <- function(
+sample_bcr_abun <- function(
     species_code, erd_path, checklists,
     effort_thresholds, extent_space, extent_time,
-    time_window="full", small_grid=11, bcrs=bcrs,
+    time_window="full", small_grid=11, bcrs,
     time_grid=7, .cores=4, quiet = TRUE){
   # verify input arguments
   assertthat::assert_that(is.character(species_code))
@@ -36,7 +36,6 @@ sample_grid_abun_bcr <- function(
   assertthat::assert_that(all(extent_time$tgrid_min < extent_time$tgrid_max))
   assertthat::assert_that(all(c("period","tgrid_min","tgrid_max","year_min", "year_max") %in% colnames(extent_time)), msg="missing threshold value(s) for period, tgrid_min, tgrid_max, year_min, year_max")
   assertthat::assert_that(time_window %in% c("gridded", "full"))
-
 
   # load species data from ERD
   # takes ~ 2-3 mins for carwre (Carolina Wren)
@@ -59,14 +58,14 @@ sample_grid_abun_bcr <- function(
       }
       data_grid[[i]][[y]] <-
         get_bcr_data(
-          data = sp_data, year = years[y], 
+          data = sp_data, .year = years[y],
           bcrs=bcrs,
           tgrid_min = extent_time$tgrid_min[i],
           tgrid_max = extent_time$tgrid_max[i],
           time_window = time_window, min_lat = extent_space$min_lat,
           max_lat = extent_space$max_lat, min_lon = extent_space$min_lon,
-          max_lon = extent_space$max_lon, 
-          small_grid=small_grid, 
+          max_lon = extent_space$max_lon,
+          small_grid=small_grid,
           .cores = .cores
         )
 

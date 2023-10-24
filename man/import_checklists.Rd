@@ -5,7 +5,7 @@
 \title{Import checklists data from the erd}
 \usage{
 import_checklists(
-  erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db"
+  checklists_parquet_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db"
 )
 }
 \arguments{
