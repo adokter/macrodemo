@@ -52,7 +52,7 @@ params$extent_time <-
 ####
 # Install an older version of dggridR from source. See:
 # https://github.com/r-barnes/dggridR/issues/63#issuecomment-1454929653
-remotes::install_github("r-barnes/dggridR", ref = "ec2a040")
+# remotes::install_github("r-barnes/dggridR", ref = "ec2a040")
 
 # we make sure we have the same version of the erdPackage as this .rmd
 package_path <- strsplit(rstudioapi::getSourceEditorContext()$path, "inst")[[1]][1]
@@ -229,7 +229,8 @@ for(species_code in params$species_to_process){
 #### Plot demographic indices ------------------------------------------------------
 ####
 
-species_code <- c("carwre", "norcar")
+# carwre
+species_code <- c("norcar")
 tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
 # select cells with at least 20 valid ratios
@@ -240,6 +241,16 @@ tidy_ratios$summary %>%
 
 # plot selected cell 20 (example)
 plot_ratios(cells_select[10], data=tidy_ratios$summary)
+
+# number of analyzable timeseries
+df <- tidy_ratios$summary
+table(df$cell, df$season)
+
+df2 <- df %>% group_by(cell, season) %>% summarise(n=n(), non_na=sum(!is.na(median))) %>%
+  filter(season=="surv", non_na>=5)
+df2 <- df %>% group_by(cell, season) %>% summarise(n=n(), non_na=sum(!is.na(median))) %>%
+  filter(season=="prod", non_na>=5)
+
 
 ####
 #### Verify normality assumptions ------------------------------------------------------
@@ -262,6 +273,7 @@ for(species_code in params$species_to_process){
 ####
 #### Compare recruitment vs mortality variances  ------------------------------------------------------
 ####
+
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
