@@ -73,6 +73,7 @@ library(fasterize)
 library(dggridR)
 library(rgee)
 library(tidyr)
+library(gridExtra)
 
 # this package also needs a working version of rcmdstan:
 # see https://mc-stan.org/cmdstanr/
@@ -231,6 +232,7 @@ for(species_code in params$species_to_process){
 
 # carwre
 species_code <- c("norcar")
+species_code <- c("carwre")
 tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
 # select cells with at least 20 valid ratios
@@ -246,10 +248,29 @@ plot_ratios(cells_select[10], data=tidy_ratios$summary)
 df <- tidy_ratios$summary
 table(df$cell, df$season)
 
+# number of cells
 df2 <- df %>% group_by(cell, season) %>% summarise(n=n(), non_na=sum(!is.na(median))) %>%
   filter(season=="surv", non_na>=5)
 df2 <- df %>% group_by(cell, season) %>% summarise(n=n(), non_na=sum(!is.na(median))) %>%
   filter(season=="prod", non_na>=5)
+
+# Plotting demographic indices for all cells
+
+# Initialize a list to hold the plots
+plots <- list()
+# Loop through each cell
+for (i in seq_along(cells_select)) {
+  # Generate a plot for the current cell
+  p <- plot_ratios(cells_select[i], data=tidy_ratios$summary)+theme(legend.position = "none") +ylim(-1.5, 1.5)
+  # Add the plot to the list of plots
+  plots[[length(plots) + 1]] <- p
+}
+
+# Arrange the plots in a grid and display
+p <- grid.arrange(grobs = plots, ncol = ceiling(sqrt(length(plots))), nrow=round(sqrt(length(plots))))
+
+# save plot panel
+ggsave(plot=p, paste0(params$output_path, species_code, "/plots/", "surv_prod_perYearCell.png"), width = 80, height= 40, units = "cm")
 
 
 ####
@@ -796,6 +817,12 @@ icar_fit_lat <-
     cores = 4, adapt_delta = .8, max_treedepth = 11, refresh = 0)
 
 summary(icar_fit_lat)
+
+# backtransform the model output using the inverse of the scale() operation
+post_summ <- data.frame(posterior_summary(icar_fit_lat, variable = c("b_Intercept", "b_lat_scaled", "sdcar")))
+post_summ2 <- post_summ * sd(car_data_select$mean) +
+  mean(car_data_select$mean)
+
 
 # verify BFMI statistic is sufficiently high
 rstan::get_bfmi(icar_fit_lat$fit)
