@@ -823,6 +823,19 @@ post_summ <- data.frame(posterior_summary(icar_fit_lat, variable = c("b_Intercep
 post_summ2 <- post_summ * sd(car_data_select$mean) +
   mean(car_data_select$mean)
 
+# back-transform according to Jacob's suggestion
+
+# The relevant ICAR model regresses slope_scaled ~ lat_scaled.
+# slope_scaled is in units of scaled(logarithms per degree C).
+# Let's call the standard deviation associated with that scaling operation sd1.
+# lat_scaled is in units of scaled(latitude). Call the associated standard deviation sd2.
+# To go from the model-reported slope, in units of scaled(logarithms per degree C) per scaled(latitude)
+# to units of logarithms per degree C per latitude, we need to multiply the numerator by sd1
+# and multiply the denominator by sd2, or in other words multiply the slope by sd1/sd2.
+# We don't need to add any means back in because translations don't affect the slope.
+
+post_summ <- data.frame(posterior_summary(icar_fit_lat, variable = c("b_Intercept", "b_lat_scaled", "sdcar")))
+post_summ3 <- post_summ*(sd(car_data_select$mean)/sd(car_data_select$lat))
 
 # verify BFMI statistic is sufficiently high
 rstan::get_bfmi(icar_fit_lat$fit)
