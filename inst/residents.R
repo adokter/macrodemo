@@ -866,7 +866,8 @@ fill_color <- "salmon2"
 alpha <- .5
 point_color <- "gray25"
 # plot the data and the scatter points, opacity by their certainty:
-ggplot(q_frame) + theme_classic() +
+figS5 <-
+  ggplot(q_frame) + theme_classic() +
   geom_ribbon(aes(x = lat, ymin = `5%`, ymax = `95%`), fill = fill_color, alpha = alpha) +
   geom_ribbon(aes(x = lat, ymin = `15%`, ymax = `85%`), fill = fill_color, alpha = alpha) +
   geom_ribbon(aes(x = lat, ymin = `25%`, ymax = `75%`), fill = fill_color, alpha = alpha) +
@@ -875,7 +876,10 @@ ggplot(q_frame) + theme_classic() +
   geom_point(aes(x = lat_jit, y = slope, alpha = certainty), color = point_color) +
   geom_segment(aes(x = lat_jit, y = lower, xend = lat_jit, yend = upper, alpha = certainty), color = point_color) +
   geom_line(aes(x = lat, y = `50%`)) +
-  ylim(c(-.5, .5))
+  ylim(c(-.5, .5))+labs(x="latitude")
+
+ggsave(paste0(params$output_path, "/carwre_norcar_plots/", "norcar_latitudinalTrend.png"), plot=figS5, width = 20, height= 15, units = "cm")
+
 # plot only the model fit:
 ggplot(q_frame) + theme_classic() +
   geom_ribbon(aes(x = lat, ymin = `5%`, ymax = `95%`), fill = fill_color, alpha = alpha) +
