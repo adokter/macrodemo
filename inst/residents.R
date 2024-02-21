@@ -823,7 +823,7 @@ post_summ <- data.frame(posterior_summary(icar_fit_lat, variable = c("b_Intercep
 post_summ2 <- post_summ * sd(car_data_select$mean) +
   mean(car_data_select$mean)
 
-# back-transform according to Jacob's suggestion
+# back-transform according to J's suggestion
 
 # The relevant ICAR model regresses slope_scaled ~ lat_scaled.
 # slope_scaled is in units of scaled(logarithms per degree C).
@@ -860,13 +860,13 @@ q_frame[, ! (names(q_frame) %in% c("label","cell","lat", "lat_jit"))] <-
   q_frame[, ! (names(q_frame) %in% c("label","cell","lat", "lat_jit"))] * sd(car_data_select$mean) +
   mean(car_data_select$mean)
 # bring up points outside of the plotting range
-q_frame$lower[q_frame$lower < -.5] <- -.5
+q_frame$lower[q_frame$lower < -.3] <- -.3
 # color settings
 fill_color <- "salmon2"
 alpha <- .5
 point_color <- "gray25"
 # plot the data and the scatter points, opacity by their certainty:
-figS5 <-
+fig5 <-
   ggplot(q_frame) + theme_classic() +
   geom_ribbon(aes(x = lat, ymin = `5%`, ymax = `95%`), fill = fill_color, alpha = alpha) +
   geom_ribbon(aes(x = lat, ymin = `15%`, ymax = `85%`), fill = fill_color, alpha = alpha) +
@@ -876,9 +876,9 @@ figS5 <-
   geom_point(aes(x = lat_jit, y = slope, alpha = certainty), color = point_color) +
   geom_segment(aes(x = lat_jit, y = lower, xend = lat_jit, yend = upper, alpha = certainty), color = point_color) +
   geom_line(aes(x = lat, y = `50%`)) +
-  ylim(c(-.5, .5))+labs(x="latitude")
+  ylim(c(-.3, .4))+labs(x="latitude")
 
-ggsave(paste0(params$output_path, "/carwre_norcar_plots/", "norcar_latitudinalTrend.png"), plot=figS5, width = 20, height= 15, units = "cm")
+ggsave(paste0(params$output_path, "/carwre_norcar_plots/", "carwre_latitudinalTrend.png"), plot=fig5, width = 18, height= 12, units = "cm")
 
 # plot only the model fit:
 ggplot(q_frame) + theme_classic() +
