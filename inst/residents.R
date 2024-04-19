@@ -7,8 +7,8 @@ if(Sys.info()[["user"]]=="amd427"){
   params$erd_path <- "~/Dropbox/macrodemography/erd/erd.db"
   params$output_path <- "~/Dropbox/macrodemography_refactor/data/residents"
 } else if(Sys.info()[["user"]]=="bg423"){
-  params$erd_path <- "~/Documents/macrodemography/data/erd.db"
-  params$output_path <- "~/Documents/macrodemography/data"
+  params$erd_path <- "~/Documents/macrodemo_project/input_data/erd.db"
+  params$output_path <- "~/Documents/macrodemo_project/output_data/initial6sp"
 }
 params$years <- c(2006:2019)
 params$extent_space <-  data.frame( min_lon=-125, max_lon=-66, min_lat=24, max_lat=50 )
@@ -130,6 +130,7 @@ raster_of_interest <- fasterize::fasterize(region_of_interest,
 ####
 #### Define hexagon grids -------------------------------------------------------------
 ####
+
 # for an area of ~ 70000 km^2, we get a resolution of 6:
 grid_large <- dggridR::dgconstruct(area = params$hexagon_area_large)
 # for an area of ~ 300 km^2, we get a resolution of 11:
@@ -138,6 +139,7 @@ grid_small <- dggridR::dgconstruct(area = params$hexagon_area_small)
 ####
 #### Import checklists -------------------------------------------------------------
 ####
+
 # print some species info
 ebirdst::ebirdst_runs %>% filter(substr(species_code,1,6) %in% species_codes$six)
 
@@ -184,9 +186,12 @@ if(params$always_filter_checklists | !file.exists(filtered_checklists_path)){
 # extract unique large hexagons
 cells_all <- unique(checklists$seqnum_large)
 
+
 ####
 #### Bootstrap abundances  -------------------------------------------------------------
 ####
+
+
 for(species_code in params$species_to_process){
   file_out <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
 
@@ -207,6 +212,7 @@ for(species_code in params$species_to_process){
 #### Calculate demographic indices (spring/fall log-ratios)  ------------------------------------------------------
 ####
 
+
 for(species_code in params$species_to_process){
   ##### load abundance data
   file_species <- paste0(params$output_path, "/abun_data/", species_code , ".rds")
@@ -226,8 +232,9 @@ for(species_code in params$species_to_process){
   saveRDS(tidy_ratios, paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 }
 
+
 ####
-#### Plot demographic indices ------------------------------------------------------
+####   Plot demographic indices -----------------------------------------------------------------
 ####
 
 # carwre
@@ -276,6 +283,8 @@ ggsave(plot=p, paste0(params$output_path, species_code, "/plots/", "surv_prod_pe
 ####
 #### Verify normality assumptions ------------------------------------------------------
 ####
+
+
 # Check the higher moments of the abundance log-ratios to verify adequacy of Gaussian approximations.
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
@@ -290,6 +299,7 @@ for(species_code in params$species_to_process){
     xlab("skewness") +
     ggtitle(species_code)
 }
+
 
 ####
 #### Compare recruitment vs mortality variances  ------------------------------------------------------
@@ -320,12 +330,12 @@ for(species_code in params$species_to_process){
 # helper function to plot cells on a map
 plot_cells_on_map <- function(data, param, color_scale){
   ggplot() + blank_theme + coord_fixed() +
-    geom_sf(data=region_of_interest, fill=NA, color="black") +
-    geom_polygon(data=data, aes(x=long, y=lat, group=group, fill=eval(parse(text=param))), alpha=0.7) +
-    geom_path(data=data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    geom_sf(data=roi, fill=NA, color="black") +
+    geom_polygon(data=data, aes(x=lon, y=lat, group=cell, fill=eval(parse(text=param))), alpha=0.7) +
+    geom_path(data=data, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
     color_scale +
-    labs(fill=param) +
-    xlim(params$plotting_xlim)
+    labs(fill=param)# +
+#    xlim(params$plotting_xlim)
 }
 
 plot1 <- list()
@@ -333,7 +343,7 @@ plot2 <- list()
 plot3 <- list()
 plot4 <- list()
 
-for(species_code in params$species_to_process){
+for(species_code in params$species_to_process) {
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   cell_lrat_sd <- readRDS(var_save_path)
 
@@ -348,11 +358,27 @@ for(species_code in params$species_to_process){
   dggridR::dgcellstogrid(
       grid_large,
       plotting_data$cell,
-      frame=TRUE,
-      wrapcells=TRUE
+      return_sf = FALSE
       ) %>%
-    mutate(cell=as.numeric(cell)) %>%
+    mutate(cell=as.numeric(seqnum)) %>%
     left_join(plotting_data, by="cell") -> grid2
+
+  # Convert coordinates to azmutal equidistant projecrtion
+  roi <- st_transform(region_of_interest, crs = "+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
+
+  # Define the target CRS (Azimuthal Equidistant Projection centered at (0, 0))
+  target_crs <- st_crs("+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
+
+  # Create an sf object from the dataframe
+  sf_df <- st_as_sf(grid2, coords = c("x", "y"), crs = 4326)
+
+  # Transform coordinates to Azimuthal Equidistant Projection
+  transformed_sf_df <- st_transform(sf_df, crs = target_crs)
+
+  # Extract transformed coordinates and update dataframe
+  transformed_coords <- st_coordinates(transformed_sf_df)
+  grid2$lon <- transformed_coords[, 1]
+  grid2$lat <- transformed_coords[, 2]
 
   # define color scales
   scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years)))
@@ -378,11 +404,12 @@ for(species_code in params$species_to_process){
   # plot the difference in survival and recruitment variance (log-effect size)
   # scale opacity by the probability that the survival variance is higher.
   p4=ggplot() + coord_fixed() + blank_theme +
-    geom_sf(data=region_of_interest, fill=NA, color="black") +
-    geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
-    geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    geom_sf(data=roi, fill=NA, color="black") +
+    geom_polygon(data=grid2, aes(x=lon, y=lat, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+    geom_path(data=grid2, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
-    xlim(params$plotting_xlim)+theme(legend.position = "none")
+    #xlim(params$plotting_xlim)+
+    theme(legend.position = "none")
   print(p4)
 
 plot1[[species_code]] <- gridExtra::grid.arrange(p1)
@@ -403,21 +430,22 @@ do.call(gridExtra::grid.arrange, c(plot4, ncol=2))
 library(cowplot)
 grid1 <- plot_grid(plotlist = plot4, ncol=2, labels = "auto")
 
-# Get legends from one of the plots
+
 p4 <-
   ggplot() + coord_fixed() + blank_theme +
-  geom_sf(data=region_of_interest, fill=NA, color="black") +
-  geom_polygon(data=grid2, aes(x=long, y=lat, group=group, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
-  geom_path(data=grid2, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+  geom_sf(data=roi2, fill=NA, color="black") +
+  geom_polygon(data=grid2, aes(x=lon, y=lat, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+  geom_path(data=grid2, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
   scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
-  xlim(params$plotting_xlim)+labs(fill="log-sd difference \n (survival-productivity)")+
+  #xlim(params$plotting_xlim)+
+  labs(fill="log-sd difference \n (survival-productivity)")+
   guides(fill=guide_colorbar(title.position = "right", title.hjust = .5))
 
 legend <- get_legend(p4+theme(legend.key.size = unit(.4, "cm")))
 
 # Add common legend to the plots
 fig3 <- grid.arrange(grid1, right=legend)
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/fig3.png", plot=fig3, width = 22, height= 7, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/fig3_v2.png", plot=fig3, width = 22, height= 7, units = "cm")
 
 
 # re-producing figure S3 of the manuscript
@@ -431,7 +459,7 @@ legend <- get_legend(plot_cells_on_map(grid2, "p_survival_variance_higher", colo
 
 # Add common legend to the plots
 figS3 <- grid.arrange(grid1, right=legend)
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/figS3_3.png", plot=figS3, width = 22, height= 8, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/figS3_v2.png", plot=figS3, width = 22, height= 8, units = "cm")
 
 # # Get legends from one of the plots
 # legend <- get_legend(plot_cells_on_map(grid2, "p_survival_variance_higher", color_scale=scale_blue_red)+
@@ -454,7 +482,7 @@ legend <- get_legend(plot_cells_on_map(grid2, "n_prod", color_scale=scale_viridi
 
 # Add common legend to the plots
 figS2 <- grid.arrange(grid1, legend, ncol = 2, widths = c(3, .5))
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/figS2.png", plot=figS2, width = 27, height= 17, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/figS2_v2.png", plot=figS2, width = 27, height= 17, units = "cm")
 
 
 ####
@@ -593,13 +621,13 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
   assert_that(label_daymet %in% unique(data_regression$label),msg=paste("daymet variable",variable,"not found in data"))
   data <- filter(data, label==label_daymet)
   # get the spatial polygons for the cells
-  grid <- dggridR::dgcellstogrid(grid_large,data$cell,frame=TRUE,wrapcells=TRUE)
+  grid <- dggridR::dgcellstogrid(grid_large,data$cell,return_sf = FALSE) %>% rename(cell=seqnum)
   # merge grid and regression data
   grid_data <- merge(grid,data,by="cell")
   # calculate average lat,long for cells:
   grid %>%
     group_by(cell) %>%
-    summarize(long=mean(long), lat=mean(lat)) -> data_label
+    summarize(long=mean(x), lat=mean(y)) -> data_label
   # define opacity based on value of alpha parameter:
   if(is.number(alpha)) grid_data$alpha=alpha
   # when alpha is NULL, color according to the certainty that the coefficient is either positively or
@@ -612,10 +640,10 @@ plot_regression <- function(data, label_daymet, moment, x_lim, fill_lim="auto", 
   }
   p <- ggplot() + coord_fixed() + blank_theme +
     geom_sf(data=region_of_interest, fill=NA, color="black")   +
-    geom_polygon(data=grid_data, aes(x=long, y=lat, group=group, fill = !!sym(moment)), alpha=grid_data$alpha) +
-    geom_path(data=grid_data, aes(x=long, y=lat, group=group), alpha=0.4, color="white") +
+    geom_polygon(data=grid_data, aes(x=x, y=y, group=cell, fill = !!sym(moment)), alpha=grid_data$alpha) +
+    geom_path(data=grid_data, aes(x=x, y=y, group=cell), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = colors, na.value=NA, limits=fill_lim, oob=scales::squish) + xlim(x_lim)
-  if(labels) p = p + geom_text(aes(x=long,y=lat,label=cell), data=data_label)
+  if(labels) p = p + geom_text(aes(x=x,y=y,label=cell), data=data_label)
   print(p)
 
 }
@@ -710,11 +738,11 @@ plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
 figSX <- grid.arrange(plots,
                       right=legend,
                       top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
-                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
                                             "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
 
 
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_unsmoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_unsmoothed3.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
 # Re-producing weather regression figure(s) for ms (Unmoothed probability)
@@ -762,11 +790,11 @@ plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
 figSX <- grid.arrange(plots,
                       right=legend,
                       top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
-                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
                                             "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
 
 
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_prob_plotArrange_unsmoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_prob_plotArrange_unsmoothed3.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
 ####
@@ -1073,10 +1101,10 @@ plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
 figSX <- grid.arrange(plots,
                       right=legend,
                       top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
-                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                      left=grid::textGrob(c("recrutiment ~ summer temperature", "survival ~ snow cover",
                                             "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
 
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_Smoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_slope_prob_plotArrange_Smoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
 # Re-producing weather regression figure(s) for ms (probability)
@@ -1128,9 +1156,9 @@ plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
 figSX <- grid.arrange(plots,
                       right=legend,
                       top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
-                      left=grid::textGrob(c("productivity ~ summer temperature", "survival ~ snow cover",
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
                                             "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
 
-ggsave("~/Documents/macrodemography/data/carwre_norcar_plots/WeatherReg_prob_plotArrange_Smoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_prob_plotArrange_Smoothed2.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
