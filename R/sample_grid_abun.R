@@ -45,6 +45,9 @@ sample_grid_abun <- function(
     checklists = checklists
   )
 
+  # run count and occurrence model to obtain 'effort corrected' count estimates
+
+
   # loop over time periods
   data_grid <- data_abun <- list()
   for (i in 1:nrow(extent_time)) {

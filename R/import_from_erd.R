@@ -5,36 +5,37 @@
 #' @param obs An optional path to a previously extracted observation file
 #' @return A \code{data.table} object with zero-filled abundance and presence-only reported colums
 #'    as well as additional columns for latitude, longitude, year, month, day_of_year, hours_of_day,
-#'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci
+#'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci, local weather
 #' @export
-import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db", checklists = NULL, obs = NULL) {
-  
-  db <- arrow::open_dataset(erd_path) 
-  
+import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db",
+                            checklists = NULL, obs = NULL) {
+
+  db <- arrow::open_dataset(erd_path)
+
   if (is.null(checklists)) {
     message("querying checklists")
     checklists <- import_checklists(checklists_parquet_path = checklists_parquet_path)
   }
-  
+
   if (is.null(obs)) {
     message("querying observations")
-    obs <- db %>% filter(species_code==sp_code)  %>% 
+    obs <- db %>% filter(species_code==sp_code)  %>%
       collect()
   }
-  
+
   message("converting to data table and joining")
-  
+
   checklists_dt <- data.table::data.table(checklists)
   obs_dt <- data.table::data.table(obs)
+
   zf <- data.table::merge.data.table(checklists_dt, obs_dt, by = "checklist_id", all.x = T)
-  
   #  zf <- checklists %>% left_join(obs, by="checklist_id") %>%  collect()
-  
+
   zf$obs_count[is.na(zf$obs_count)] <- 0
   zf$only_presence_reported[is.na(zf$only_presence_reported)] <- 0
-  
+
   attr(zf, "species") <- sp_code
-  
+
   return(zf)
 }
 
@@ -43,19 +44,25 @@ import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Wor
 #' @param erd_path The path to the eBird reference dataset .db file
 #' @return a data.frame of the checklists
 #' @export
-
-import_checklists <- function(checklists_parquet_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db") {
+import_checklists <- function(checklists_parquet_path = "~/Documents/macrodemo_project/input_data/ebird2022/checklists-2022.parquet",
+                              cci_weather_path = "~/Documents/macrodemo_project/input_data/ebird2022/erd2022-cci-weather.parquet") {
 
   checklists <- arrow::open_dataset(checklists_parquet_path) %>%
-    select(checklist_id, latitude, longitude, year, day_of_year, hours_of_day, protocol_id, is_stationary, 
-           is_traveling, effort_hrs, effort_distance_km) %>% 
+    select(checklist_id, latitude, longitude, year, day_of_year, hours_of_day, protocol_id, is_stationary,
+           is_traveling, effort_hrs, effort_distance_km, num_observers) %>%
     collect()
-  
-  return(checklists)
-  # db <- DBI::dbConnect(RSQLite::SQLite(), erd_path)  
-  # checklists_query <- DBI::dbSendQuery(db, 
+
+  cci_weather <- arrow::open_dataset(cci_weather_path) %>%
+    select(checklist_id, cci, cds_cbh, cds_t2m, cds_tp, cds_i10fg) %>% collect()
+
+  checklists_cci_weather <- merge(checklists, cci_weather, by=c("checklist_id"))
+
+  return(checklists_cci_weather)
+
+  # db <- DBI::dbConnect(RSQLite::SQLite(), erd_path)
+  # checklists_query <- DBI::dbSendQuery(db,
   #                                      "SELECT sampling_event_id, latitude, longitude, year, month, day_of_year,
-  #                                       hours_of_day, protocol_id, is_stationary, is_traveling, 
+  #                                       hours_of_day, protocol_id, is_stationary, is_traveling,
   #                                       effort_hrs, effort_distance_km, cci, ntl_mean, ELEV_30M_MEDIAN
   #                                    FROM checklists")
   # checklists <- DBI::dbFetch(checklists_query)

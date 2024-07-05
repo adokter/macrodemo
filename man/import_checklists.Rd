@@ -5,7 +5,10 @@
 \title{Import checklists data from the erd}
 \usage{
 import_checklists(
-  checklists_parquet_path = "/Users/jacobsocolar/Dropbox/Work/macrodemography/erd/erd.db"
+  checklists_parquet_path =
+    "~/Documents/macrodemo_project/input_data/ebird2022/checklists-2022.parquet",
+  cci_weather_path =
+    "~/Documents/macrodemo_project/input_data/ebird2022/erd2022-cci-weather.parquet"
 )
 }
 \arguments{

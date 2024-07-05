@@ -23,7 +23,7 @@ import_from_erd(
 \value{
 A \code{data.table} object with zero-filled abundance and presence-only reported colums
 as well as additional columns for latitude, longitude, year, month, day_of_year, hours_of_day,
-protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci
+protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci, local weather
 }
 \description{
 Import and zero-fill data from the ebird reference dataset
