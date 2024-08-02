@@ -9,6 +9,7 @@ if(Sys.info()[["user"]]=="amd427"){
 } else if(Sys.info()[["user"]]=="bg423"){
   params$erd_path <- "~/Documents/macrodemo_project/input_data/erd.db"
   params$output_path <- "~/Documents/macrodemo_project/output_data/initial6sp"
+  params$input_path <- "~/Documents/macrodemo_project/input_data/"
 }
 params$years <- c(2006:2019)
 params$extent_space <-  data.frame( min_lon=-125, max_lon=-66, min_lat=24, max_lat=50 )
@@ -143,8 +144,8 @@ grid_small <- dggridR::dgconstruct(area = params$hexagon_area_small)
 # print some species info
 ebirdst::ebirdst_runs %>% filter(substr(species_code,1,6) %in% species_codes$six)
 
-checklists_path <- paste0(params$output_path, "/checklists.RDS")
-filtered_checklists_path <- paste0(params$output_path, "/filtered_checklists.RDS")
+checklists_path <- paste0(params$input_path, "checklists.RDS")
+filtered_checklists_path <- paste0(params$input_path, "filtered_checklists.RDS")
 
 if(params$always_import_checklists | !file.exists(checklists_path)){
   checklists <- import_checklists(params$erd_path)
@@ -508,8 +509,11 @@ data_cell <- left_join(data_cell,data_compare_ratios,by="cell")
 ####
 #### Load weather data  ------------------------------------------------------
 ####
-dir.create(paste0(params$output_path, "/weather"), showWarnings = FALSE)
-weather_file <- paste0(params$output_path, "/weather/",paste0(params$daymet$label, collapse = "-"),".rds")
+
+# dir.create(paste0(params$input_path, "/weather"), showWarnings = FALSE)
+weather_file <- paste0(params$input_path, "weather/",paste0(params$daymet$label, collapse = "-"),".rds")
+
+weather_file2 <-"~/Documents/macrodemo_project/input_data/weather/daymet_winter_april_temperature.rds"
 
 if(!params$quiet) print(paste("loading/processing weather file",basename(weather_file)))
 
@@ -534,7 +538,7 @@ if(!params$quiet) print(paste("loading/processing weather file",basename(weather
 # }
 
 
-flag_file <- paste0(params$output_path, "/weather/flag.rds")
+flag_file <- paste0(params$input_path, "/weather/flag.rds")
 
 if (params$always_download_weather | !file.exists(weather_file) | !file.exists(flag_file)) {
   # initialize google earth engine
@@ -574,7 +578,7 @@ if (params$always_download_weather | !file.exists(weather_file) | !file.exists(f
   }
 } else {
   # load weather data if always_download_weather is false and the weather file exists
-  data_daymet <- readRDS(weather_file)
+  data_daymet <- readRDS(weather_file2)
 }
 
 
@@ -604,6 +608,39 @@ for(species_code in params$species_to_process){
     saveRDS(data_regression, paste0(regression_save_path, "/regressions.rds"))
   }
 }
+
+
+# NOT MAIN CODE: run weather regression including April temperature as confounding variable, as per reviewer 3 !
+data_regression <- weather_regressions2(tidy_ratios, data_daymet, params$daymet[1,], params$n_year_min, quiet=FALSE)
+# saveRDS(data_regression, paste0(regression_save_path, "/regressions2.rds"))
+data_regression_cor <- data_regression %>% merge(correlation_results, by=c("cell"))
+
+p1 <- plot_regression(data_regression, "tmax_winter", "mean", params$plotting_xlim, fill_lim = c(-1,1))+
+  theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))+labs(fill="estimated regression\nslope (unsmoothed)")
+
+p2 <- plot_regression(data_regression_cor, "tmax_winter", "correlation", params$plotting_xlim, fill_lim = c(-1,1))+
+  theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))+labs(fill="r")
+
+
+# the daymet parameter to use in regression:
+par = params$daymet$label[1]
+# the period (demographic index) to use in regression:
+period_demographic = params$daymet$period[1]
+# select the data for the regression:
+data_regression <- tidy_ratio_series %>%
+  filter(cell %in% unique(cells_all)) %>%
+  filter(period==period_demographic) %>%
+  filter(is.finite(avg))
+# add column `predictor` containing a copy of the data we want to regress:
+data_regression$predictor=data_regression[[par]]
+
+brms_formula <- bf(avg | resp_se(sd, sigma = TRUE) ~ tmax_winter+tmax_april)
+mod <- brm(brms_formula, data = data_regression, family = gaussian(),
+           prior = prior(std_normal(), class = "b"),
+           iter = 2000, warmup = 1000, chains = 3, refresh = 0,
+           backend = "cmdstanr")
+
+
 
 ####
 #### Plot weather regressions------------------------------------------------------
@@ -981,14 +1018,14 @@ plot_smooth_mean <- function(grid_data, region_of_interest){
   fl <- 1. # Baagi has changed this for consistency for manuscript!
   ggplot() + coord_fixed() + blank_theme +
     geom_sf(data=region_of_interest, fill=NA, color="black")   +
-    geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=group, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
-    geom_path(data=grid_data, aes(x=long, y=lat.x, group=group), alpha=0.4, color="white") +
+    geom_polygon(data=grid_data, aes(x=long, y=lat.x, group=cell, fill = smooth_mean), alpha = 2*abs(grid_data$smooth_prob - 0.5))   +
+    geom_path(data=grid_data, aes(x=long, y=lat.x, group=cell), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
     xlim(params$plotting_xlim)
 }
 
 merge_grid_to_data <- function(data, grid_large){
-  grid <- dggridR::dgcellstogrid(grid_large,data$cell,frame=TRUE,wrapcells=TRUE)
+  grid <- dggridR::dgcellstogrid(grid_large,data$cell, return_sf = FALSE) %>% rename(cell=seqnum)
   grid <- merge(grid,data,by=c("cell"))
   # remove smoothed data equal to NA
   grid[!is.na(grid$smooth_prob), ]
@@ -1069,6 +1106,18 @@ data_regression <- readRDS(paste0(regression_save_path, "/weather_regressions_sm
 grid_data <- data_regression %>% filter(label=="tmax_winter")
 p1 <- plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
   theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+p1_1 <- plot_smooth_mean(grid_data = grid_data, region_of_interest = region_of_interest)+
+  theme(legend.position = "none")+labs(caption = "survival ~ winter temperature", tag = "a)")+
+  theme(plot.caption = element_text(hjust = 0.5))
+
+p1_2 <- p1 + labs(caption = "survival ~ winter temperature + April temperature", tag = "b)")+theme(legend.position = "none")+
+  theme(plot.caption = element_text(hjust = 0.5))
+
+p1_3 <- grid.arrange(p1_1, p1_2, ncol=2)
+figSX <- grid.arrange(p1_3, right=legend)
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_slope_prob_Smoothed_AprilTempConfound.png", plot=figSX, width = 24, height= 10, units = "cm")
+
 
 # swe
 grid_data <- data_regression %>% filter(label=="swe")

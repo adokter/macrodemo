@@ -45,8 +45,12 @@ sample_grid_abun <- function(
     checklists = checklists
   )
 
-  # run count and occurrence model to obtain 'effort corrected' count estimates
+  # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
+  sp_data <- coun_correction(sp_data)
 
+  # replace obs_count by corr_count
+  sp_data$obs_count <- sp_data$corr_count
+  sp_data <- sp_data %>% select(-corr_count)
 
   # loop over time periods
   data_grid <- data_abun <- list()
