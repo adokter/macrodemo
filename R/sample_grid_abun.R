@@ -46,7 +46,8 @@ sample_grid_abun <- function(
   )
 
   # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
-  sp_data <- coun_correction(sp_data)
+  print("about to run XGboost for effort corrected count estimate!")
+  sp_data <- count_correction(sp_data)
 
   # replace obs_count by corr_count
   sp_data$obs_count <- sp_data$corr_count
