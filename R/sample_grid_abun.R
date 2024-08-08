@@ -74,7 +74,7 @@ sample_grid_abun <- function(
     corrected_cell_data <- count_correction(combined_data)
 
     # check if corrected_cell_data is not empty before adding it to the list
-    if (now(corrected_cell_data) > 0) {
+    if (nrow(corrected_cell_data) > 0) {
     corrected_data_list[[cell]] <- corrected_cell_data
     }else{
       message(paste("skipping cell", cell, "due to unsatisfactory model performance."))
