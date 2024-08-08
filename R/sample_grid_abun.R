@@ -47,7 +47,44 @@ sample_grid_abun <- function(
 
   # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
   message("about to run XGboost for effort corrected count estimate!")
-  sp_data <- count_correction(sp_data)
+
+  # Function to check if each cell has at least one year with more than 10 checklists with non-zero observations
+  check_obs_in_cell <- function(cell_data) {
+    obs_count_by_year <- table(cell_data$year[cell_data$obs_count > 0])
+    return(any(obs_count_by_year > 10))
+  }
+
+  # Apply the count_correction function for each of the large cell, if there are +10 checklists in a cell-year
+  unique_cells <- unique(sp_data$seqnum_large)
+  corrected_data_list <- list()
+
+  for(cell in unique_cells) {
+    message(paste("running effort corection for cell", cell, "...", sep = " "))
+
+    cell_data <- sp_data[sp_data$seqnum_large == cell, ]
+
+    if (check_obs_in_cell(cell_data)) {
+
+    # subset data only to include years with more than 10 checklists with non-zero observations
+    obs_count_by_year <- table(cell_data$year[cell_data$obs_count > 0])
+    years_to_include <- names(obs_count_by_year[obs_count_by_year > 10])
+    combined_data <- subset(cell_data, year %in% years_to_include)
+
+    # apply count_correction to the combined data
+    corrected_cell_data <- count_correction(combined_data)
+
+    # check if corrected_cell_data is not empty before adding it to the list
+    if (now(corrected_cell_data) > 0) {
+    corrected_data_list[[cell]] <- corrected_cell_data
+    }else{
+      message(paste("skipping cell", cell, "due to unsatisfactory model performance."))
+    }
+    }else{
+    message(paste("skipping cell", cell, "due to insufficient checklists in all years."))
+    }
+  }
+
+  sp_data <- do.call(rbind, corrected_data_list)
 
   # replace obs_count by corr_count
   sp_data$obs_count <- sp_data$corr_count

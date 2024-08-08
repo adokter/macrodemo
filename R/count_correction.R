@@ -14,9 +14,10 @@ count_correction <-
 function(sp_data) {
 
   # take variables of interest and then filter only occurence data
-  sp_data1 <- sp_data %>% select(obs_count, day_of_year, latitude, longitude, effort_distance_km,
-                                hours_of_day, num_observers, effort_hrs, is_stationary,
-                                cci, cds_tp, cds_i10fg, cds_t2m) %>%
+  sp_data1 <- sp_data %>% select(obs_count, year, day_of_year, latitude, longitude, effort_distance_km,
+                                 hours_of_day, num_observers, effort_hrs, is_stationary,
+                                 cci, cds_d2m, cds_hcc, cds_i10fg, cds_lcc, cds_mcc, cds_msl,
+                                 cds_rf, cds_slc,cds_t2m, cds_tp, cds_u10, cds_v10, cds_i10fg) %>%
     filter(obs_count > 0)
 
   # track indices
@@ -27,7 +28,8 @@ function(sp_data) {
 
   ### check for NA values (XGBoost does not take NA values)
   if(sum(is.na(sp_data1)) > 0) {
-    return("NA exists, XGboost does not take NA values!")
+    message("NA exists, XGboost does not take NA values!")
+    return(data.frame()) # returning an empty df to keep consistent str for concatenating the list of df later on!
     }
 
   ### data preparation for XGboost
@@ -43,8 +45,8 @@ function(sp_data) {
   sp_data1[df_shuffled, ]
 
   ### Get the number of each set (in case its not an even break like 1000)
-  n_train <- round(0.75 * nrow(sp_data1))
-  n_val <- round(0.15 * nrow(sp_data1))
+  n_train <- round(0.6 * nrow(sp_data1))
+  n_val <- round(0.2 * nrow(sp_data1))
   n_test<- nrow(sp_data1) - n_train - n_val
 
   ### Create indices for the training, validation, and test sets (so you know which rows you sampled from)
@@ -96,21 +98,29 @@ function(sp_data) {
 
   # Evaluate the model performance on training and test sets
   train_set$pred <- predict(model, xgb.DMatrix(data = train_x))
-  train_rmse <- sqrt(mean((train_y - train_set$pred)^2))
+  train_rmse <- sqrt(mean((train_y - train_set$pred)^2, na.rm = TRUE))
 
   test_set$pred <- predict(model, xgb.DMatrix(data = test_x))
-  test_rmse <- sqrt(mean((test_y - test_set$pred)^2))
+  test_rmse <- sqrt(mean((test_y - test_set$pred)^2, na.rm = TRUE))
 
-  # Print RMSE values
+  # Print diagnostic information
   cat("Train RMSE:", train_rmse, "\n")
   cat("Test RMSE:", test_rmse, "\n")
+  cat("Train SD:", sd(train_set$obs_count, na.rm = TRUE), "\n")
+  cat("Test SD:", sd(test_set$obs_count, na.rm = TRUE), "\n")
 
-  # run predictions if RMSE are lower than SD
-  if (!(train_rmse < sd(train_set$obs_count)) & !(test_rmse < sd(test_set$obs_count))) {
-
-    return("rmse is larger than sd !")
-
+  # Check for NA values in RMSE and standard deviations
+  if (is.na(train_rmse) | is.na(test_rmse) | is.na(sd(train_set$obs_count)) | is.na(sd(test_set$obs_count))) {
+    message("NA values detected in RMSE or standard deviation calculations. Please check your data.")
+    return(data.frame())
   }
+
+  # Run predictions if RMSE are lower than SD
+  if (!(train_rmse < sd(train_set$obs_count, na.rm = TRUE)) & !(test_rmse < sd(test_set$obs_count, na.rm = TRUE))) {
+    message("rmse is larger than sd !")
+    return(data.frame())
+  }
+
 
   all_data_x <- rbind(train_x, valid_x, test_x)  # re-combine training, validation test test data
   pred_org <- predict(model, xgb.DMatrix(data = all_data_x))
@@ -118,11 +128,21 @@ function(sp_data) {
   sim_data_x <- all_data_x %>% as.data.frame() %>%
                                mutate(effort_distance_km = 1,
                                       hours_of_day = median(hours_of_day), # I may need to fix this var as 0-1?
-                                      effort_hrs = median(effort_hrs),
+                                      num_observers =1,
+                                      effort_hrs = 1,
+                                      is_stationary = 0,       # travelling checklist
                                       cci = median(cci),
+                                      cds_d2m = median(cds_d2m),
+                                      cds_hcc = median(cds_hcc),
+                                      cds_lcc = median(cds_lcc),
+                                      cds_mcc = median(cds_mcc),
+                                      cds_msl = median(cds_msl),
+                                      cds_rf = median(cds_rf),
+                                      cds_slc = median(cds_slc),
+                                      cds_u10 = median(cds_u10),
+                                      cds_v10 = median(cds_v10),
                                       cds_t2m = median(cds_t2m),
                                       cds_i10fg = median(cds_i10fg),
-                                      num_observers = median(num_observers),
                                       cds_tp = median(cds_tp)) %>% as.matrix()
 
   pred_sim <- predict(model, xgb.DMatrix(data = sim_data_x))
@@ -131,7 +151,7 @@ function(sp_data) {
   # calculation of CF
   cf <- pred_sim / pred_org
 
-  # re-order the cf to mactch the original order of sp_data1
+  # re-order the cf to match the original order of sp_data1
   cf <- cf[order(df_shuffled)]
 
   # multiply counts by correction factor

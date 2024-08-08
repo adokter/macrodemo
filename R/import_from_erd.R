@@ -28,7 +28,7 @@ import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Wor
   checklists_dt <- data.table::data.table(checklists)
   obs_dt <- data.table::data.table(obs)
 
-  zf <- data.table::merge.data.table(checklists_dt, obs_dt, by = "checklist_id", all.x = T)
+  zf <- data.table::merge.data.table(checklists_dt, obs_dt, by = "checklist_id") # please note, it is not zero-filled now!
   #  zf <- checklists %>% left_join(obs, by="checklist_id") %>%  collect()
 
   zf$obs_count[is.na(zf$obs_count)] <- 0
@@ -49,13 +49,12 @@ import_checklists <- function(checklists_parquet_path = "~/Documents/macrodemo_p
 
   checklists <- arrow::open_dataset(checklists_parquet_path) %>%
     select(checklist_id, latitude, longitude, year, day_of_year, hours_of_day, protocol_id, is_stationary,
-           is_traveling, effort_hrs, effort_distance_km, num_observers) %>%
+           is_traveling, effort_hrs, effort_distance_km, num_observers)
+
+  cci_weather <- arrow::open_dataset(cci_weather_path)
+
+  checklists_cci_weather <- inner_join(checklists, cci_weather, by=c("checklist_id")) %>%
     collect()
-
-  cci_weather <- arrow::open_dataset(cci_weather_path) %>%
-    select(checklist_id, cci, cds_cbh, cds_t2m, cds_tp, cds_i10fg) %>% collect()
-
-  checklists_cci_weather <- merge(checklists, cci_weather, by=c("checklist_id"))
 
   return(checklists_cci_weather)
 
