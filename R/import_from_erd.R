@@ -28,7 +28,7 @@ import_from_erd <- function(sp_code, erd_path = "/Users/jacobsocolar/Dropbox/Wor
   checklists_dt <- data.table::data.table(checklists)
   obs_dt <- data.table::data.table(obs)
 
-  zf <- data.table::merge.data.table(checklists_dt, obs_dt, by = "checklist_id") # please note, it is not zero-filled now!
+  zf <- data.table::merge.data.table(checklists_dt, obs_dt, by = "checklist_id", all.x = TRUE)
   #  zf <- checklists %>% left_join(obs, by="checklist_id") %>%  collect()
 
   zf$obs_count[is.na(zf$obs_count)] <- 0

@@ -4,7 +4,7 @@
 \alias{count_correction}
 \title{A helper function to generate effort (detectability) corrected counts for each checklist}
 \usage{
-count_correction(sp_data)
+count_correction(sp_data, .cores = 4)
 }
 \arguments{
 \item{sp_data}{zero-filled 'sp_data' data.table object, output from \code{import_from_erd} function}

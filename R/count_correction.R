@@ -11,10 +11,14 @@
 #'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci, local weather
 #' @export
 count_correction <-
-function(sp_data) {
+function(sp_data, .cores=4) {
+
+  # Set up parallel processing
+  cl <- parallel::makeCluster(.cores)
+  doParallel::registerDoParallel(cl)
 
   # take variables of interest and then filter only occurence data
-  sp_data1 <- sp_data %>% select(obs_count, year, day_of_year, latitude, longitude, effort_distance_km,
+  sp_data1 <- sp_data %>% select(obs_count, day_of_year, latitude, longitude, effort_distance_km,
                                  hours_of_day, num_observers, effort_hrs, is_stationary,
                                  cci, cds_d2m, cds_hcc, cds_i10fg, cds_lcc, cds_mcc, cds_msl,
                                  cds_rf, cds_slc,cds_t2m, cds_tp, cds_u10, cds_v10, cds_i10fg) %>%
@@ -76,25 +80,68 @@ function(sp_data) {
   train_y <- as.vector(train_y)
   valid_y <- as.vector(valid_y)
 
+  # Define a grid of hyperparameter space
+  tune_grid <- expand.grid(
+    nrounds = seq(100, 1000, by = 100),            # Number of boosting iterations
+    max_depth = seq(3, 10, by = 2),                # Maximum depth of a tree
+    eta = c(0.01, 0.05, 0.1, 0.3),                 # Learning rate
+    gamma = c(0, 0.1, 0.2, 0.5),                   # Minimum loss reduction required to make a split
+    colsample_bytree = c(0.5, 0.7, 1),             # Subsample ratio of columns when constructing each tree
+    min_child_weight = c(1, 3, 5),                 # Minimum sum of instance weight needed in a child
+    subsample = c(0.5, 0.7, 1)                     # Subsample ratio of the training instances
+  )
+
+
+  # Set up training control
+  train_control <- trainControl(
+    method = "cv",                   # cross-validation
+    number = 3,                      # number of folds
+    verboseIter = TRUE,              # print training log
+    search = "grid",                 # use grid search
+    allowParallel = TRUE             # allow parallel processing
+  )
+
+  # Train the model using caret
+  xgb_train_caret <- train(
+    x = train_x,
+    y = train_y,
+    method = "xgbTree",
+    trControl = train_control,
+    tuneGrid = tune_grid,
+    metric = "RMSE"
+  )
+
+  # Extract the best hyperparameters
+  best_params <- xgb_train_caret$bestTune
+
+
   # Convert training and validation sets to DMatrix
   xgb_train <- xgb.DMatrix(data = train_x, label = train_y)
   xgb_val <- xgb.DMatrix(data = valid_x, label = valid_y)
 
-  # Train the final model with the default parameters
+  # Train the final model with the best parameters
   model <- xgb.train(
     params = list(
       objective = "reg:tweedie",
       eval_metric = "poisson-nloglik",
       booster = "gbtree",
-      eta = 0.3,                                  # default: 0.3
-      max_depth = 6),
+      eta = best_params$eta,
+      max_depth = best_params$max_depth,
+      gamma = best_params$gamma,
+      colsample_bytree = best_params$colsample_bytree,
+      min_child_weight = best_params$min_child_weight,
+      subsample = best_params$subsample
+    ),
     data = xgb_train,
-    nrounds = 500,
+    nrounds = best_params$nrounds,
     watchlist = list(train = xgb_train, eval = xgb_val),
-    #  early_stopping_rounds = 10,
+    early_stopping_rounds = 10,
     verbose = 1
   )
 
+  # Stop parallel processing after the final model training
+  parallel::stopCluster(cl)
+  parallel::registerDoSEQ() # Return to sequential processing
 
   # Evaluate the model performance on training and test sets
   train_set$pred <- predict(model, xgb.DMatrix(data = train_x))
@@ -152,15 +199,16 @@ function(sp_data) {
   cf <- pred_sim / pred_org
 
   # re-order the cf to match the original order of sp_data1
-  cf <- cf[order(df_shuffled)]
+  cf <- cf[order(df_shuffled)] # store it
 
   # multiply counts by correction factor
   sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = obs_count * cf)
 
   # merge back to the orginal sp_data, creating sp_data2
   sp_data2 <- sp_data
-  sp_data2$corr_count <- 0 # initialize corr_count column with 0
+  sp_data2$corr_count <- 0 # initialize corr_count column with 0, store both!
   sp_data2$corr_count[sp_data1_indices] <- sp_data1$corr_count
+  sp_data2$correction_factor <- cf
   return(sp_data2)
 
 }

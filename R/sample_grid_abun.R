@@ -46,7 +46,7 @@ sample_grid_abun <- function(
   )
 
   # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
-  message("about to run XGboost for effort corrected count estimate!")
+  message("about to run XGboost for estimating effort corrected count!")
 
   # Function to check if each cell has at least one year with more than 10 checklists with non-zero observations
   check_obs_in_cell <- function(cell_data) {
@@ -71,7 +71,7 @@ sample_grid_abun <- function(
     combined_data <- subset(cell_data, year %in% years_to_include)
 
     # apply count_correction to the combined data
-    corrected_cell_data <- count_correction(combined_data)
+    corrected_cell_data <- count_correction(combined_data, .cores = .cores)
 
     # check if corrected_cell_data is not empty before adding it to the list
     if (nrow(corrected_cell_data) > 0) {
@@ -87,6 +87,7 @@ sample_grid_abun <- function(
   sp_data <- do.call(rbind, corrected_data_list)
 
   # replace obs_count by corr_count
+  sp_data$obs_count_original <- sp_data$obs_count
   sp_data$obs_count <- sp_data$corr_count
   sp_data <- sp_data %>% select(-corr_count)
 
