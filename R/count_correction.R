@@ -46,7 +46,7 @@ function(sp_data, .cores=4) {
 
   ### randomize the dataset
   df_shuffled <- sample(nrow(sp_data1))
-  sp_data1[df_shuffled, ]
+  sp_data1 <- sp_data1[df_shuffled, ]
 
   ### Get the number of each set (in case its not an even break like 1000)
   n_train <- round(0.6 * nrow(sp_data1))
@@ -80,40 +80,48 @@ function(sp_data, .cores=4) {
   train_y <- as.vector(train_y)
   valid_y <- as.vector(valid_y)
 
-  # Define a grid of hyperparameter space
-  tune_grid <- expand.grid(
-    nrounds = seq(100, 1000, by = 100),            # Number of boosting iterations
-    max_depth = seq(3, 10, by = 2),                # Maximum depth of a tree
-    eta = c(0.01, 0.05, 0.1, 0.3),                 # Learning rate
-    gamma = c(0, 0.1, 0.2, 0.5),                   # Minimum loss reduction required to make a split
-    colsample_bytree = c(0.5, 0.7, 1),             # Subsample ratio of columns when constructing each tree
-    min_child_weight = c(1, 3, 5),                 # Minimum sum of instance weight needed in a child
-    subsample = c(0.5, 0.7, 1)                     # Subsample ratio of the training instances
-  )
+  # # Define a grid of hyperparameter space
+  # tune_grid <- expand.grid(
+  #   nrounds = seq(100, 1000, by = 100),            # Number of boosting iterations
+  #   max_depth = seq(3, 10, by = 2),                # Maximum depth of a tree
+  #   eta = c(0.01, 0.05, 0.1, 0.3),                 # Learning rate
+  #   gamma = c(0, 0.1, 0.2, 0.5),                   # Minimum loss reduction required to make a split
+  #   colsample_bytree = c(0.5, 0.7, 1),             # Subsample ratio of columns when constructing each tree
+  #   min_child_weight = c(1, 3, 5),                 # Minimum sum of instance weight needed in a child
+  #   subsample = c(0.5, 0.7, 1)                     # Subsample ratio of the training instances
+  # )
+  #
+  #
+  # # Set up training control
+  # train_control <- trainControl(
+  #   method = "cv",                   # cross-validation
+  #   number = 3,                      # number of folds
+  #   verboseIter = TRUE,              # print training log
+  #   search = "grid",                 # use grid search
+  #   allowParallel = TRUE             # allow parallel processing
+  # )
+  #
+  # # Train the model using caret
+  # xgb_train_caret <- train(
+  #   x = train_x,
+  #   y = train_y,
+  #   method = "xgbTree",
+  #   trControl = train_control,
+  #   tuneGrid = tune_grid,
+  #   metric = "RMSE"
+  # )
 
-
-  # Set up training control
-  train_control <- trainControl(
-    method = "cv",                   # cross-validation
-    number = 3,                      # number of folds
-    verboseIter = TRUE,              # print training log
-    search = "grid",                 # use grid search
-    allowParallel = TRUE             # allow parallel processing
-  )
-
-  # Train the model using caret
-  xgb_train_caret <- train(
-    x = train_x,
-    y = train_y,
-    method = "xgbTree",
-    trControl = train_control,
-    tuneGrid = tune_grid,
-    metric = "RMSE"
-  )
-
-  # Extract the best hyperparameters
-  best_params <- xgb_train_caret$bestTune
-
+  # best hyperparameters from above tuning!
+  best_params <- structure(list(
+    nrounds = 900,
+    max_depth = 9,
+    eta = 0.01,
+    gamma = 0.1,
+    colsample_bytree = 0.5,
+    min_child_weight = 3,
+    subsample = 1),
+    row.names = 3569L,
+    class = "data.frame")
 
   # Convert training and validation sets to DMatrix
   xgb_train <- xgb.DMatrix(data = train_x, label = train_y)
@@ -141,7 +149,7 @@ function(sp_data, .cores=4) {
 
   # Stop parallel processing after the final model training
   parallel::stopCluster(cl)
-  parallel::registerDoSEQ() # Return to sequential processing
+  foreach::registerDoSEQ() # Return to sequential processing
 
   # Evaluate the model performance on training and test sets
   train_set$pred <- predict(model, xgb.DMatrix(data = train_x))
@@ -199,16 +207,17 @@ function(sp_data, .cores=4) {
   cf <- pred_sim / pred_org
 
   # re-order the cf to match the original order of sp_data1
-  cf <- cf[order(df_shuffled)] # store it
+  cf <- cf[order(df_shuffled)]
 
   # multiply counts by correction factor
-  sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = obs_count * cf)
+  sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = obs_count * cf, cf = cf)
 
   # merge back to the orginal sp_data, creating sp_data2
   sp_data2 <- sp_data
   sp_data2$corr_count <- 0 # initialize corr_count column with 0, store both!
   sp_data2$corr_count[sp_data1_indices] <- sp_data1$corr_count
-  sp_data2$correction_factor <- cf
+  sp_data2$correction_factor <- NA
+  sp_data2$correction_factor[sp_data1_indices] <- sp_data1$cf
   return(sp_data2)
 
 }
