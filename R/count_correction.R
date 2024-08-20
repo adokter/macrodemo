@@ -138,7 +138,8 @@ function(sp_data, .cores=4) {
       gamma = best_params$gamma,
       colsample_bytree = best_params$colsample_bytree,
       min_child_weight = best_params$min_child_weight,
-      subsample = best_params$subsample
+      subsample = best_params$subsample,
+      nthread = 8
     ),
     data = xgb_train,
     nrounds = best_params$nrounds,
