@@ -11,11 +11,7 @@
 #'    protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci, local weather
 #' @export
 count_correction <-
-function(sp_data, .cores=4) {
-
-  # Set up parallel processing
-  cl <- parallel::makeCluster(.cores)
-  doParallel::registerDoParallel(cl)
+function(sp_data) {
 
   # take variables of interest and then filter only occurence data
   sp_data1 <- sp_data %>% select(obs_count, day_of_year, latitude, longitude, effort_distance_km,
@@ -148,10 +144,6 @@ function(sp_data, .cores=4) {
     verbose = 1
   )
 
-  # Stop parallel processing after the final model training
-  parallel::stopCluster(cl)
-  foreach::registerDoSEQ() # Return to sequential processing
-
   # Evaluate the model performance on training and test sets
   train_set$pred <- predict(model, xgb.DMatrix(data = train_x))
   train_rmse <- sqrt(mean((train_y - train_set$pred)^2, na.rm = TRUE))
@@ -183,11 +175,11 @@ function(sp_data, .cores=4) {
 
   sim_data_x <- all_data_x %>% as.data.frame() %>%
                                mutate(effort_distance_km = 1,
-                                      hours_of_day = median(hours_of_day), # I may need to fix this var as 0-1?
+                                      hours_of_day = median(hours_of_day), #  8 am I may need to fix this var as 0-1?
                                       num_observers =1,
                                       effort_hrs = 1,
                                       is_stationary = 0,       # travelling checklist
-                                      cci = median(cci),
+                                      cci = median(cci), # 75%
                                       cds_d2m = median(cds_d2m),
                                       cds_hcc = median(cds_hcc),
                                       cds_lcc = median(cds_lcc),

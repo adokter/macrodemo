@@ -71,7 +71,7 @@ sample_bcr_abun <- function(
       combined_data <- subset(cell_data, year %in% years_to_include)
 
       # apply count_correction to the combined data
-      corrected_cell_data <- count_correction(combined_data, .cores = .cores)
+      corrected_cell_data <- count_correction2(combined_data)
 
       # check if corrected_cell_data is not empty before adding it to the list
       if (nrow(corrected_cell_data) > 0) {
