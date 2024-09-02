@@ -10,7 +10,7 @@ count_correction2(sp_data)
 \item{sp_data}{zero-filled 'sp_data' data.table object, output from \code{import_from_erd} function}
 }
 \value{
-A \code{data.table} object with zero-filled abundance (effort corrected) and presence-only reported colums
+A \code{data.table} object with zero-filled abundance (effort corrected) and presence-only reported columns
 as well as additional columns for latitude, longitude, year, month, day_of_year, hours_of_day,
 protocol_id, is_stationary, is_traveling, effort_hrs, effort_distance_km, cci
 }
