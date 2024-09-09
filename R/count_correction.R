@@ -1,9 +1,8 @@
 #' A helper function to generate effort (detectability) corrected counts for each checklist
 #'
-#' This function filters non-zero counts and then runs XGboost to predict count for
+#' This function runs on zero-filled data and runs XGboost to predict count for
 #'    original conditions (lat,long, day of year, checlist duration, distance, hour of day, number of observer, mode of checklist,
-#'    cci, temperature, precipitation, wind), as well for standarndized condition (medians). Then, it estimates the 'correction factor, cf'
-#'    which is used to standardize (correct for effort and detection) counts.
+#'    cci, temperature, precipitation, wind), as well for standarndized condition.
 #'
 #' @param sp_data zero-filled 'sp_data' data.table object, output from \code{import_from_erd} function
 #' @return A \code{data.table} object with zero-filled abundance (effort corrected) and presence-only reported colums
@@ -18,13 +17,20 @@ function(sp_data) {
                                  hours_of_day, num_observers, effort_hrs, is_stationary,
                                  cci, cds_d2m, cds_hcc, cds_i10fg, cds_lcc, cds_mcc, cds_msl,
                                  cds_rf, cds_slc,cds_t2m, cds_tp, cds_u10, cds_v10, cds_i10fg) %>%
-    filter(obs_count > 0)
+    mutate(day_of_year = (day_of_year - min(day_of_year)) / (max(day_of_year) - min(day_of_year)))  # re-scaling day_of_year as 0-1
+
 
   # track indices
-  sp_data1_indices <- which(sp_data$obs_count > 0)
+  sp_data1_indices <- which(!is.na(sp_data$obs_count))
 
   # Categorical values need to be converted to numeric
   sp_data1$is_stationary  <- as.integer(sp_data1$is_stationary)
+
+  ### Each cell-season should have at least 10 checklists!
+  if(nrow(sp_data1) < 10) {
+    message("less than 10 data points detected. No model for this cell and season!")
+    return(data.frame()) # returning an empty df to keep consistent str for concatenating the list of df later on!
+  }
 
   ### check for NA values (XGBoost does not take NA values)
   if(sum(is.na(sp_data1)) > 0) {
@@ -76,69 +82,22 @@ function(sp_data) {
   train_y <- as.vector(train_y)
   valid_y <- as.vector(valid_y)
 
-  # # Define a grid of hyperparameter space
-  # tune_grid <- expand.grid(
-  #   nrounds = seq(100, 1000, by = 100),            # Number of boosting iterations
-  #   max_depth = seq(3, 10, by = 2),                # Maximum depth of a tree
-  #   eta = c(0.01, 0.05, 0.1, 0.3),                 # Learning rate
-  #   gamma = c(0, 0.1, 0.2, 0.5),                   # Minimum loss reduction required to make a split
-  #   colsample_bytree = c(0.5, 0.7, 1),             # Subsample ratio of columns when constructing each tree
-  #   min_child_weight = c(1, 3, 5),                 # Minimum sum of instance weight needed in a child
-  #   subsample = c(0.5, 0.7, 1)                     # Subsample ratio of the training instances
-  # )
-  #
-  #
-  # # Set up training control
-  # train_control <- trainControl(
-  #   method = "cv",                   # cross-validation
-  #   number = 3,                      # number of folds
-  #   verboseIter = TRUE,              # print training log
-  #   search = "grid",                 # use grid search
-  #   allowParallel = TRUE             # allow parallel processing
-  # )
-  #
-  # # Train the model using caret
-  # xgb_train_caret <- train(
-  #   x = train_x,
-  #   y = train_y,
-  #   method = "xgbTree",
-  #   trControl = train_control,
-  #   tuneGrid = tune_grid,
-  #   metric = "RMSE"
-  # )
-
-  # best hyperparameters from above tuning!
-  best_params <- structure(list(
-    nrounds = 900,
-    max_depth = 9,
-    eta = 0.01,
-    gamma = 0.1,
-    colsample_bytree = 0.5,
-    min_child_weight = 3,
-    subsample = 1),
-    row.names = 3569L,
-    class = "data.frame")
-
   # Convert training and validation sets to DMatrix
   xgb_train <- xgb.DMatrix(data = train_x, label = train_y)
   xgb_val <- xgb.DMatrix(data = valid_x, label = valid_y)
 
-  # Train the final model with the best parameters
+  # Train the final model with the default parameters
   model <- xgb.train(
     params = list(
       objective = "reg:tweedie",
       eval_metric = "poisson-nloglik",
       booster = "gbtree",
-      eta = best_params$eta,
-      max_depth = best_params$max_depth,
-      gamma = best_params$gamma,
-      colsample_bytree = best_params$colsample_bytree,
-      min_child_weight = best_params$min_child_weight,
-      subsample = best_params$subsample,
+      eta = 0.3,                                  # default: 0.3
+      max_depth = 6,
       nthread = 8
     ),
     data = xgb_train,
-    nrounds = best_params$nrounds,
+    nrounds = 500,
     watchlist = list(train = xgb_train, eval = xgb_val),
     early_stopping_rounds = 10,
     verbose = 1
@@ -175,42 +134,38 @@ function(sp_data) {
 
   sim_data_x <- all_data_x %>% as.data.frame() %>%
                                mutate(effort_distance_km = 1,
-                                      hours_of_day = median(hours_of_day), #  8 am I may need to fix this var as 0-1?
+                                      hours_of_day = 8, #  8 am I may need to fix this var as 0-1?
                                       num_observers =1,
                                       effort_hrs = 1,
                                       is_stationary = 0,       # travelling checklist
-                                      cci = median(cci), # 75%
+                                      cci = 3, # 75%
+                                      day_of_year = median(day_of_year),
                                       cds_d2m = median(cds_d2m),
-                                      cds_hcc = median(cds_hcc),
-                                      cds_lcc = median(cds_lcc),
-                                      cds_mcc = median(cds_mcc),
+                                      cds_hcc = 0,
+                                      cds_lcc = 0,
+                                      cds_mcc = 0,
                                       cds_msl = median(cds_msl),
-                                      cds_rf = median(cds_rf),
+                                      cds_rf = 0,
                                       cds_slc = median(cds_slc),
-                                      cds_u10 = median(cds_u10),
-                                      cds_v10 = median(cds_v10),
+                                      cds_u10 = 0,
+                                      cds_v10 = 0,
                                       cds_t2m = median(cds_t2m),
-                                      cds_i10fg = median(cds_i10fg),
-                                      cds_tp = median(cds_tp)) %>% as.matrix()
+                                      cds_i10fg = 0,
+                                      cds_tp = 0) %>% as.matrix()
 
   pred_sim <- predict(model, xgb.DMatrix(data = sim_data_x))
 
+  # re-order the predictions to match the original order of sp_data1
+  pred_org <- pred_org[order(df_shuffled)]
+  pred_sim <- pred_sim[order(df_shuffled)]
 
-  # calculation of CF
-  cf <- pred_sim / pred_org
-
-  # re-order the cf to match the original order of sp_data1
-  cf <- cf[order(df_shuffled)]
-
-  # multiply counts by correction factor
-  sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = obs_count * cf, cf = cf)
+  # corrected count
+  sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = pred_sim - obs_count + pred_org)
 
   # merge back to the orginal sp_data, creating sp_data2
   sp_data2 <- sp_data
   sp_data2$corr_count <- 0 # initialize corr_count column with 0, store both!
   sp_data2$corr_count[sp_data1_indices] <- sp_data1$corr_count
-  sp_data2$correction_factor <- NA
-  sp_data2$correction_factor[sp_data1_indices] <- sp_data1$cf
   return(sp_data2)
 
 }

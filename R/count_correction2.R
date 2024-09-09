@@ -13,19 +13,25 @@
 count_correction2 <-
   function(sp_data) {
 
-
     # take variables of interest and then filter only occurence data
-    sp_data1 <- sp_data %>% select(obs_count, effort_distance_km, # should exclude latlong
+    sp_data1 <- sp_data %>% select(obs_count, day_of_year, effort_distance_km, # should exclude latlong
                                    hours_of_day, num_observers, effort_hrs, is_stationary,
-                                   cci, cds_d2m, cds_hcc, cds_i10fg, cds_lcc, cds_mcc, cds_msl,
-                                   cds_rf, cds_slc,cds_t2m, cds_tp, cds_u10, cds_v10, cds_i10fg) %>%
-      filter(obs_count > 0)
+                                   cci) %>%
+      mutate(day_of_year = (day_of_year - min(day_of_year)) / (max(day_of_year) - min(day_of_year)))  # re-scaling day_of_year as 0-1
+    # %>%
+ #     filter(obs_count > 0)
 
-    # track indices
-    sp_data1_indices <- which(sp_data$obs_count > 0)
+   # track indices
+   sp_data1_indices <- which(!is.na(sp_data$obs_count))
 
     # Categorical values need to be converted to numeric
     sp_data1$is_stationary  <- as.integer(sp_data1$is_stationary)
+
+    ### Each cell-season should have at least 10 checklists!
+    if(nrow(sp_data1) < 10) {
+      message("less than 10 data points detected. No model for this cell and season!")
+      return(data.frame()) # returning an empty df to keep consistent str for concatenating the list of df later on!
+    }
 
     ### check for NA values (XGBoost does not take NA values)
     if(sum(is.na(sp_data1)) > 0) {
@@ -53,7 +59,7 @@ count_correction2 <-
     ### Create indices for the training, validation, and test sets (so you know which rows you sampled from)
     train_indices <- df_shuffled [1:n_train]
     valid_indices <- df_shuffled [(n_train + 1):(n_train + n_val)]
-    test_indices <- df_shuffled [(n_train + n_val + 1):nrow(sp_data1)]
+    test_indices  <- df_shuffled [(n_train + n_val + 1):nrow(sp_data1)]
 
     ### Divide the dataset into groups:
     train_set <- sp_data1[train_indices, ]
@@ -129,11 +135,11 @@ count_correction2 <-
     sim_data_x <- all_data_x %>% as.data.frame() %>%
       mutate(effort_distance_km = 1,
              hours_of_day = 8, #  8 am
-             #             day_of_year = 10 days after, 10 days before if(params$extent_time$period == "fall")
+             day_of_year = median(day_of_year),
              num_observers = 1,
              effort_hrs = 1,
              is_stationary = 0,       # travelling checklist
-             cci = 3 # 95%
+             cci = 3 # 75% ?
       ) %>% as.matrix()
 
     pred_sim <- predict(model, xgb.DMatrix(data = sim_data_x))
@@ -142,10 +148,12 @@ count_correction2 <-
     # calculation of CF
     cf <- pred_sim / pred_org
 
-    # re-order the cf to match the original order of sp_data1
+    # re-order the predictions to match the original order of sp_data1
     cf <- cf[order(df_shuffled)]
+    # pred_org <- pred_org[order(df_shuffled)]
+    # pred_sim <- pred_sim[order(df_shuffled)]
 
-    # multiply counts by correction factor
+    # corrected count
     sp_data1 <- sp_data1[order(df_shuffled), ] %>% mutate(corr_count = obs_count * cf, cf = cf)
 
     # merge back to the orginal sp_data, creating sp_data2

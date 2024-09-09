@@ -45,42 +45,42 @@ sample_grid_abun <- function(
     checklists = checklists
   )
 
+  # Taking only relevant season data
+  sp_data <- merge(sp_data, macrodemography:::get_tgrid(), by=c("day_of_year"))
+  sp_data_season1 <- sp_data[tgrid >= extent_time[1,]$tgrid_min & tgrid <= extent_time[1,]$tgrid_max, ] %>% mutate(season = "season1")
+  sp_data_season2 <- sp_data[tgrid >= extent_time[2,]$tgrid_min & tgrid <= extent_time[2,]$tgrid_max, ] %>% mutate(season = "season2")
+  sp_data <- rbind(sp_data_season1, sp_data_season2)
+
   # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
   message("about to run XGboost for estimating effort corrected count!")
 
-  # Function to check if each cell has at least one year with more than 10 checklists with non-zero observations
-  check_obs_in_cell <- function(cell_data) {
-    obs_count_by_year <- table(cell_data$year[cell_data$obs_count > 0])
-    return(any(obs_count_by_year > 10))
-  }
-
-  # Apply the count_correction function for each of the large cell, if there are +10 checklists in a cell-year
+  # Apply the count_correction function for each of the large cell
   unique_cells <- unique(sp_data$seqnum_large)
+  seasons <- unique(sp_data$season)
+
   corrected_data_list <- list()
 
   for(cell in unique_cells) {
-    message(paste("running effort corection for cell", cell, "...", sep = " "))
 
-    cell_data <- sp_data[sp_data$seqnum_large == cell, ]
+    for(current_season in seasons) {
 
-    if (check_obs_in_cell(cell_data)) {
+      message(paste("running effort corection for cell", cell, "and", current_season, "...", sep = " "))
 
-    # subset data only to include years with more than 10 checklists with non-zero observations
-    obs_count_by_year <- table(cell_data$year[cell_data$obs_count > 0])
-    years_to_include <- names(obs_count_by_year[obs_count_by_year > 10])
-    combined_data <- subset(cell_data, year %in% years_to_include)
+      cell_data <- sp_data[sp_data$seqnum_large == cell & sp_data$season == current_season, ]
 
-    # apply count_correction to the combined data
-    corrected_cell_data <- count_correction(combined_data)
+      # apply count_correction to the cell_data
+      corrected_cell_data <- count_correction_temp(cell_data)
 
-    # check if corrected_cell_data is not empty before adding it to the list
-    if (nrow(corrected_cell_data) > 0) {
-    corrected_data_list[[cell]] <- corrected_cell_data
-    }else{
-      message(paste("skipping cell", cell, "due to unsatisfactory model performance."))
-    }
-    }else{
-    message(paste("skipping cell", cell, "due to insufficient checklists in all years."))
+      # check if corrected_cell_data is not empty before adding it to the list
+      if (nrow(corrected_cell_data) > 0) {
+
+        # Use a combination of cell and season as the list index to avoid overwriting
+        corrected_data_list[[paste(cell, current_season, sep = "_")]] <- corrected_cell_data
+
+      }else{
+        message(paste("skipping cell", cell, "due to unsatisfactory model performance."))
+      }
+
     }
   }
 
