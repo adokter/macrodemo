@@ -50,7 +50,7 @@ sample_bcr_abun <- function(
   sp_data <- merge(sp_data, macrodemography:::get_tgrid(), by=c("day_of_year"))
   sp_data_season1 <- sp_data[tgrid >= extent_time[1,]$tgrid_min & tgrid <= extent_time[1,]$tgrid_max, ] %>% mutate(season = "season1")
   sp_data_season2 <- sp_data[tgrid >= extent_time[2,]$tgrid_min & tgrid <= extent_time[2,]$tgrid_max, ] %>% mutate(season = "season2")
-  sp_data <- rbind(sp_data_season1, sp_data_season2)
+  sp_data <- rbind(sp_data_season1, sp_data_season2) %>% select(-tgrid)
 
   # run count model (XGboost) to obtain 'effort corrected' (as well as 'standardized') count estimates
   message("about to run XGboost for estimating effort corrected count!")
@@ -70,7 +70,7 @@ sample_bcr_abun <- function(
       cell_data <- sp_data[sp_data$seqnum_large == cell & sp_data$season == current_season, ]
 
       # apply count_correction to the cell_data
-      corrected_cell_data <- count_correction2(cell_data)
+      corrected_cell_data <- effort_correction(cell_data)
 
       # check if corrected_cell_data is not empty before adding it to the list
       if (nrow(corrected_cell_data) > 0) {
@@ -79,7 +79,7 @@ sample_bcr_abun <- function(
         corrected_data_list[[paste(cell, current_season, sep = "_")]] <- corrected_cell_data
 
       }else{
-        message(paste("skipping cell", cell, "due to unsatisfactory model performance."))
+        message(paste("skipping cell", cell, "and", current_season, "due to unsatisfactory model performance."))
       }
 
     }
