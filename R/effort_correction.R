@@ -87,6 +87,83 @@ effort_correction <-
     xgb_train <- xgb.DMatrix(data = train_x, label = train_y)
     xgb_val <- xgb.DMatrix(data = valid_x, label = valid_y)
 
+    # # should you tune hyperparameters? Define a grid of hyperparameters
+    # tune_grid <- expand.grid(
+    #   nrounds = seq(100, 1000, by = 100),            # Number of boosting iterations
+    #   max_depth = seq(3, 10, by = 2),                # Maximum depth of a tree
+    #   eta = c(0.01, 0.05, 0.1, 0.3),                 # Learning rate
+    #   gamma = c(0, 0.1, 0.2, 0.5),                   # Minimum loss reduction required to make a split
+    #   colsample_bytree = c(0.5, 0.7, 1),             # Subsample ratio of columns when constructing each tree
+    #   min_child_weight = c(1, 3, 5),                 # Minimum sum of instance weight needed in a child
+    #   subsample = c(0.5, 0.7, 1)                     # Subsample ratio of the training instances
+    # )
+    #
+    # # run hyperparameter tuning in parallel
+    # cores <- 7
+    # cl <- makeCluster(cores)
+    # registerDoParallel(cl)
+    #
+    # # Set up training control
+    # train_control <- trainControl(
+    #   method = "cv",                   # cross-validation
+    #   number = 3,                      # number of folds
+    #   allowParallel = TRUE,
+    #   verboseIter = TRUE             # print training log
+    # )
+    #
+    # tictoc::tic()
+    # # Train the model using caret
+    # xgb_train_caret <- train(
+    #   x = train_x,
+    #   y = train_y,
+    #   method = "xgbTree",
+    #   trControl = train_control,
+    #   tuneGrid = tune_grid,
+    #   metric = "RMSE"
+    # ). # this proccess took 3.5 hours!
+    # tictoc::toc()
+    # stopCluster(cl)
+    # registerDoSEQ()  # Revert to sequential processing
+    #
+    # # Extract the best hyperparameters
+    # best_params <- xgb_train_caret$bestTune
+
+    # best hyperparameters from above tuning!
+    # best_params <- structure(
+    #   list(
+    #     nrounds = 400,
+    #     max_depth = 7,
+    #     eta = 0.01,
+    #     gamma = 0.5,
+    #     colsample_bytree = 0.7,
+    #     min_child_weight = 5,
+    #     subsample = 0.7
+    #   ),
+    #   row.names = 3134L,
+    #   class = "data.frame"
+    # )
+    #
+    # model <- xgb.train(
+    #   params = list(
+    #     objective = "reg:tweedie",
+    #     eval_metric = "poisson-nloglik",
+    #     booster = "gbtree",
+    #     eta = best_params$eta,
+    #     max_depth = best_params$max_depth,
+    #     gamma = best_params$gamma,
+    #     colsample_bytree = best_params$colsample_bytree,
+    #     min_child_weight = best_params$min_child_weight,
+    #     subsample = best_params$subsample,
+    #     nthread = 8
+    #   ),
+    #   data = xgb_train,
+    #   nrounds = best_params$nrounds,
+    #   watchlist = list(train = xgb_train, eval = xgb_val),
+    #   early_stopping_rounds = 10,
+    #   verbose = 1
+    # )
+
+
     # Train the final model with the default parameters
     model <- xgb.train(
       params = list(
@@ -103,6 +180,7 @@ effort_correction <-
       early_stopping_rounds = 10,
       verbose = 1
     )
+
     # Evaluate the model performance on training and test sets
     train_set$pred <- predict(model, xgb.DMatrix(data = train_x))
     train_rmse <- sqrt(mean((train_y - train_set$pred)^2, na.rm = TRUE))
@@ -117,7 +195,7 @@ effort_correction <-
     cat("Test SD:", sd(test_set$obs_count, na.rm = TRUE), "\n")
 
     # # Check for NA values in RMSE and standard deviations
-    # if (is.na(train_rmse) | is.na(test_rmse) | is.na(sd(train_set$obs_count)) | is.na(sd(test_set$obs_count))) {
+    # if (is.na(train_rmse) | is.na(test_rmse) | is.na(sd(train_set$obs_count, na.rm = TRUE)) | is.na(sd(test_set$obs_count, na.rm = TRUE))) {
     #   message("NA values detected in RMSE or standard deviation calculations. Please check your data.")
     #   return(data.frame())
     # }
