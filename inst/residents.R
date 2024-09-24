@@ -287,19 +287,25 @@ ggsave(plot=p, paste0(params$output_path, species_code, "/plots/", "surv_prod_pe
 
 
 # Check the higher moments of the abundance log-ratios to verify adequacy of Gaussian approximations.
+
+ratio <- data_frame()
+
 for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
-  # excess kurtosis = kurtosis - 3
-  ggplot(tidy_ratios$summary, aes(x=kurtosis-3)) +
-    geom_histogram(binwidth=.1) +
-    xlab("excess kurtosis") +
-    ggtitle(species_code)
-  # skewness
-  ggplot(tidy_ratios$summary, aes(x=skewness)) +
-    geom_histogram(binwidth=.1) +
-    xlab("skewness") +
-    ggtitle(species_code)
+  df <- tidy_ratios$summary %>% mutate(species = ebirdst_runs$common_name[ebirdst_runs$species_code == species_code])
+
+  ratio <- rbind(ratio, df)
 }
+
+# verify kurtosis and skewness
+ratio %>%
+  mutate(excess_kurtosis=kurtosis-3) %>%
+  pivot_longer(c(skewness, excess_kurtosis)) %>%
+  group_by(species,name) %>%
+  ggplot(aes(value)) +
+  geom_histogram(binwidth = .1) +
+  facet_wrap(c("name", "species")) -> p
+
 
 
 ####
@@ -343,6 +349,7 @@ plot1 <- list()
 plot2 <- list()
 plot3 <- list()
 plot4 <- list()
+plot5 <- list()
 
 for(species_code in params$species_to_process) {
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
@@ -413,18 +420,23 @@ for(species_code in params$species_to_process) {
     theme(legend.position = "none")
   print(p4)
 
+  # plot posterior predictability check
+  p5=plot_cells_on_map(grid2, "ppc_fit", color_scale=scale_blue_red)+
+    theme(legend.position = "none")+ theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+  print(p5)
+
 plot1[[species_code]] <- gridExtra::grid.arrange(p1)
 plot2[[species_code]] <- gridExtra::grid.arrange(p2)
 plot3[[species_code]] <- gridExtra::grid.arrange(p3)
 plot4[[species_code]] <- gridExtra::grid.arrange(p4)
-
+plot5[[species_code]] <- gridExtra::grid.arrange(p5)
 }
 
 do.call(gridExtra::grid.arrange, c(plot1, ncol=2))
 do.call(gridExtra::grid.arrange, c(plot2, ncol=2))
 do.call(gridExtra::grid.arrange, c(plot3, ncol=2))
 do.call(gridExtra::grid.arrange, c(plot4, ncol=2))
-
+do.call(gridExtra::grid.arrange, c(plot5, ncol=2))
 
 # re-producing figure 3 of the manuscript
 # ---------------------------------------
@@ -447,6 +459,20 @@ legend <- get_legend(p4+theme(legend.key.size = unit(.4, "cm")))
 # Add common legend to the plots
 fig3 <- grid.arrange(grid1, right=legend)
 ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/fig3_v2.png", plot=fig3, width = 22, height= 7, units = "cm")
+
+
+# Producing figure SX of the manuscript, posterior predictability check (ppc)
+# -----------------------------------------------------------------------
+library(cowplot)
+grid1 <- plot_grid(plotlist = plot5, ncol=2, labels = "auto")
+
+# Get legends from one of the plots
+legend <- get_legend(plot_cells_on_map(grid2, "ppc_fit", color_scale=scale_blue_red)+
+                       labs(fill="posterior predictive check")+theme(legend.key.size = unit(.4, "cm")))
+
+# Add common legend to the plots
+figS3 <- grid.arrange(grid1, right=legend)
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/variance comparison ppc.png", plot=figS3, width = 22, height= 8, units = "cm")
 
 
 # re-producing figure S3 of the manuscript
@@ -578,7 +604,7 @@ if (params$always_download_weather | !file.exists(weather_file) | !file.exists(f
   }
 } else {
   # load weather data if always_download_weather is false and the weather file exists
-  data_daymet <- readRDS(weather_file2)
+  data_daymet <- readRDS(weather_file)
 }
 
 
@@ -593,6 +619,7 @@ if (params$always_download_weather | !file.exists(weather_file) | !file.exists(f
 ####
 #### Weather regressions  ------------------------------------------------------
 ####
+
 for(species_code in params$species_to_process){
   regression_save_path <- paste0(params$output_path, "/regression_results/", species_code)
   dir.create(regression_save_path, recursive = TRUE, showWarnings = FALSE)
@@ -832,6 +859,58 @@ figSX <- grid.arrange(plots,
 
 
 ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_prob_plotArrange_unsmoothed3.png", plot=figSX, width = 24, height= 25, units = "cm")
+
+
+# Producing weather regression 'Posterior Predictive Checks' figure(s) for ms
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code1 in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code1)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # plot the percentage of observed value (y) fall within 95% credible interval of predicted values
+  p1 <- plot_regression(data_regression, "tmax_winter", "ppc_fit", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+  p2 <- plot_regression(data_regression, "swe", "ppc_fit", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+  p3 <- plot_regression(data_regression, "tmax_summer", "ppc_fit", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code1]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code1]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code1]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_regression(data_regression, "tmax_winter", "ppc_fit", params$plotting_xlim, alpha=.8, fill_lim=c(0,1), colors = cols_bd2)+
+                       labs(fill="% of observed values \n that are within 95% CI\nof predicted values"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto",
+                   label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_ppc_plotArrange_unsmoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
 ####

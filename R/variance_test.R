@@ -34,6 +34,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
   effect_size_sd=NA
   prod_mean=NA
   surv_mean=NA
+  ppc_fit=NA
 
   # only fit model if we have sufficient ratios for both recruitment and productivity:
   if(nrow(ratio_data) >= n_ratio_min & all(count(ratio_data,period)$n>=n_ratio_min)){
@@ -45,7 +46,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
       if(!quiet) print(paste("starting estimation for cell",cell_index))
       mod <- brm(mod_formula, data = ratio_data, family = gaussian(),
                  iter = iter, warmup = warmup, chains = chains, refresh = 0,
-                 backend = "cmdstanr", silent=ifelse(quiet,2,1))
+                 backend = "cmdstanr", silent=ifelse(quiet,2,1), save_pars = save_pars(latent = TRUE))
       diagnostics <- check_brmsfit_diagnostics(mod)
       if(all(diagnostics)) converged = TRUE
 
@@ -82,6 +83,14 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
       prod_mean <- mean(d$b_Intercept)
       surv_mean <- mean(d$b_Intercept + d$b_seasonsurv)
 
+      # Perform posterior predictive checks
+      ppc_result <- pp_check(mod, ndraws = 100, plot = FALSE)$data
+
+      # Calculate the PPC fit percentage (e.g., how many observed values are within 95% credible intervals)
+      ppc_fit <- mean(ppc_result$value[ppc_result$is_y == TRUE] > quantile(ppc_result$value[ppc_result$is_y == FALSE], 0.025) &
+                        ppc_result$value[ppc_result$is_y ==TRUE] < quantile(ppc_result$value[ppc_result$is_y == FALSE], 0.975))
+
+
     } else{
       if(!quiet) print(paste("diagnostic failure for cell", cell_index))
     }
@@ -89,7 +98,7 @@ compare_ratio_variances <- function(cell_index, data, n_ratio_min=5, warmup=1000
     if(!quiet) print(paste("insufficient ratios available for cell",cell_index))
   }
 
-  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log, effect_size_sd=effect_size_sd, prod_mean=prod_mean, surv_mean=surv_mean))
+  return(tibble(cell=cell_index, p_survival_variance_higher=p_survival_variance_higher,effect_size_log=effect_size_log, effect_size_sd=effect_size_sd, prod_mean=prod_mean, surv_mean=surv_mean, ppc_fit = ppc_fit))
 }
 
 #' perform formal test of whether productivity or survival variance is larger

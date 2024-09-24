@@ -57,7 +57,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
 
       # initialize output
       output=data.frame(cell=cells_all[i],period=period_demographic,label=par,n=nrow(data_regression),
-                        mean=NA,median=NA,sd=NA,skewness=NA,kurtosis=NA,p_value=NA,converged=NA)
+                        mean=NA,median=NA,sd=NA,skewness=NA,kurtosis=NA,p_value=NA,converged=NA, ppc_fit=NA)
 
       if(nrow(data_regression)>min_n){
         # construct brms regression formula:
@@ -76,7 +76,7 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
             mod <- brm(brms_formula, data = data_regression, family = gaussian(),
                        prior = prior(std_normal(), class = "b"),
                        iter = iter, warmup = warmup, chains = chains, refresh = 0,
-                       backend = "cmdstanr", silent=ifelse(quiet,2,1))
+                       backend = "cmdstanr", silent=ifelse(quiet,2,1), save_pars = save_pars(latent = TRUE))
           )))
 
           diagnostics <- check_brmsfit_diagnostics(mod)
@@ -99,6 +99,14 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
 
           slopes <- d$b_predictor
 
+          # Perform posterior predictive checks
+          ppc_result <- pp_check(mod, ndraws = 100, plot = FALSE)$data
+
+          # Calculate the PPC fit percentage (e.g., how many observed values are within 95% credible intervals)
+          ppc_fit <- mean(ppc_result$value[ppc_result$is_y == TRUE] > quantile(ppc_result$value[ppc_result$is_y == FALSE], 0.025) &
+                            ppc_result$value[ppc_result$is_y ==TRUE] < quantile(ppc_result$value[ppc_result$is_y == FALSE], 0.975))
+
+
           output=data.frame(cell=cells_all[i],
                             period=period_demographic,
                             label=par,
@@ -109,7 +117,8 @@ weather_regressions <- function(tidy_ratios, data_daymet, params_daymet, min_n, 
                             skewness=moments::skewness(slopes),
                             kurtosis=moments::kurtosis(slopes),
                             p_value=mean(slopes > 0),
-                            converged=converged
+                            converged=converged,
+                            ppc_fit=ppc_fit # store the ppc_fit percentage
           )
         } else{
           output$converged=FALSE
