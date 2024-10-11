@@ -294,17 +294,34 @@ for(species_code in params$species_to_process){
   tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
   df <- tidy_ratios$summary %>% mutate(species = ebirdst_runs$common_name[ebirdst_runs$species_code == species_code])
 
+
+
   ratio <- rbind(ratio, df)
 }
 
-# verify kurtosis and skewness
-ratio %>%
+
+surv <- ratio %>% filter(season %in% "surv") %>% mutate(season="survival")
+prod <- ratio %>% filter(season %in% "prod") %>% mutate(season="recruitment")
+
+# verify kurtosis and skewness for productivity index
+prod %>%
   mutate(excess_kurtosis=kurtosis-3) %>%
   pivot_longer(c(skewness, excess_kurtosis)) %>%
-  group_by(species,name) %>%
+  group_by(species,name, season) %>%
   ggplot(aes(value)) +
   geom_histogram(binwidth = .1) +
-  facet_wrap(c("name", "species")) -> p
+  facet_wrap(c("name", "species", "season")) -> prod_plot
+
+# verify kurtosis and skewness for survival
+surv %>%
+  mutate(excess_kurtosis=kurtosis-3) %>%
+  pivot_longer(c(skewness, excess_kurtosis)) %>%
+  group_by(species,name, season) %>%
+  ggplot(aes(value)) +
+  geom_histogram(binwidth = .1) +
+  facet_wrap(c("name", "species", "season")) -> surv_plot
+
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/prod_kurtosis_skewness.png", plot=prod_plot, width = 20, height= 15, units = "cm")
 
 
 
@@ -337,9 +354,9 @@ for(species_code in params$species_to_process){
 # helper function to plot cells on a map
 plot_cells_on_map <- function(data, param, color_scale){
   ggplot() + blank_theme + coord_fixed() +
-    geom_sf(data=roi, fill=NA, color="black") +
-    geom_polygon(data=data, aes(x=lon, y=lat, group=cell, fill=eval(parse(text=param))), alpha=0.7) +
-    geom_path(data=data, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
+    geom_sf(data=region_of_interest, fill=NA, color="black") +
+    geom_polygon(data=data, aes(x=x, y=y, group=cell, fill=eval(parse(text=param))), alpha=0.7) +
+    geom_path(data=data, aes(x=x, y=y, group=cell), alpha=0.4, color="white") +
     color_scale +
     labs(fill=param)# +
 #    xlim(params$plotting_xlim)
@@ -354,6 +371,7 @@ plot5 <- list()
 for(species_code in params$species_to_process) {
   var_save_path <- paste0(params$output_path, "/variance_results/", species_code,"/variance_test.rds")
   cell_lrat_sd <- readRDS(var_save_path)
+  tidy_ratios <- readRDS(paste0(params$output_path, "/abun_data/", species_code, "_ratios.rds"))
 
   tidy_ratios$summary %>%
     select(cell, n_prod,n_surv,n) %>%
@@ -371,22 +389,22 @@ for(species_code in params$species_to_process) {
     mutate(cell=as.numeric(seqnum)) %>%
     left_join(plotting_data, by="cell") -> grid2
 
-  # Convert coordinates to azmutal equidistant projecrtion
-  roi <- st_transform(region_of_interest, crs = "+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
-
-  # Define the target CRS (Azimuthal Equidistant Projection centered at (0, 0))
-  target_crs <- st_crs("+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
-
-  # Create an sf object from the dataframe
-  sf_df <- st_as_sf(grid2, coords = c("x", "y"), crs = 4326)
-
-  # Transform coordinates to Azimuthal Equidistant Projection
-  transformed_sf_df <- st_transform(sf_df, crs = target_crs)
-
-  # Extract transformed coordinates and update dataframe
-  transformed_coords <- st_coordinates(transformed_sf_df)
-  grid2$lon <- transformed_coords[, 1]
-  grid2$lat <- transformed_coords[, 2]
+  # # Convert coordinates to azmutal equidistant projecrtion
+  # roi <- st_transform(region_of_interest, crs = "+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
+  #
+  # # Define the target CRS (Azimuthal Equidistant Projection centered at (0, 0))
+  # target_crs <- st_crs("+proj=aeqd +lat_0=40 +lon_0=-103 +datum=WGS84")
+  #
+  # # Create an sf object from the dataframe
+  # sf_df <- st_as_sf(grid2, coords = c("x", "y"), crs = 4326)
+  #
+  # # Transform coordinates to Azimuthal Equidistant Projection
+  # transformed_sf_df <- st_transform(sf_df, crs = target_crs)
+  #
+  # # Extract transformed coordinates and update dataframe
+  # transformed_coords <- st_coordinates(transformed_sf_df)
+  # grid2$lon <- transformed_coords[, 1]
+  # grid2$lat <- transformed_coords[, 2]
 
   # define color scales
   scale_viridis <- viridis::scale_fill_viridis(limits = c(params$n_year_min, length(params$years)))
@@ -412,9 +430,9 @@ for(species_code in params$species_to_process) {
   # plot the difference in survival and recruitment variance (log-effect size)
   # scale opacity by the probability that the survival variance is higher.
   p4=ggplot() + coord_fixed() + blank_theme +
-    geom_sf(data=roi, fill=NA, color="black") +
-    geom_polygon(data=grid2, aes(x=lon, y=lat, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
-    geom_path(data=grid2, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
+    geom_sf(data=region_of_interest, fill=NA, color="black") +
+    geom_polygon(data=grid2, aes(x=x, y=y, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+    geom_path(data=grid2, aes(x=x, y=y, group=cell), alpha=0.4, color="white") +
     scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
     #xlim(params$plotting_xlim)+
     theme(legend.position = "none")
@@ -446,19 +464,21 @@ grid1 <- plot_grid(plotlist = plot4, ncol=2, labels = "auto")
 
 p4 <-
   ggplot() + coord_fixed() + blank_theme +
-  geom_sf(data=roi2, fill=NA, color="black") +
-  geom_polygon(data=grid2, aes(x=lon, y=lat, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
-  geom_path(data=grid2, aes(x=lon, y=lat, group=cell), alpha=0.4, color="white") +
+  geom_sf(data=region_of_interest, fill=NA, color="black") +
+  geom_polygon(data=grid2, aes(x=x, y=y, group=cell, fill = effect_size_log), alpha = 2*abs(grid2$p_survival_variance_higher - 0.5))   +
+  geom_path(data=grid2, aes(x=x, y=y, group=cell), alpha=0.4, color="white") +
   scale_fill_gradientn(colours = cols_bd, na.value=NA, limits = c(-fl, fl), oob=scales::squish) +
   #xlim(params$plotting_xlim)+
-  labs(fill="log-sd difference \n (survival-productivity)")+
+  labs(fill="log-sd difference \n (survival-recruitment)")+
   guides(fill=guide_colorbar(title.position = "right", title.hjust = .5))
 
 legend <- get_legend(p4+theme(legend.key.size = unit(.4, "cm")))
 
 # Add common legend to the plots
 fig3 <- grid.arrange(grid1, right=legend)
-ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/fig3_v2.png", plot=fig3, width = 22, height= 7, units = "cm")
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/fig3_1.png", plot=fig3, width = 22, height= 7, units = "cm")
+
+
 
 
 # Producing figure SX of the manuscript, posterior predictability check (ppc)
@@ -913,6 +933,113 @@ figSX <- grid.arrange(plots,
 ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/WeatherReg_ppc_plotArrange_unsmoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
 
 
+# Producing weather regression 'Skewness' figure(s) for ms
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code1 in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code1)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # plot the percentage of observed value (y) fall within 95% credible interval of predicted values
+  p1 <- plot_regression(data_regression, "tmax_winter", "skewness", params$plotting_xlim, alpha=.8, fill_lim=c(-1,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+  p2 <- plot_regression(data_regression, "swe", "skewness", params$plotting_xlim, alpha=.8, fill_lim=c(-1,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+  p3 <- plot_regression(data_regression, "tmax_summer", "skewness", params$plotting_xlim, alpha=.8, fill_lim=c(-1,1), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code1]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code1]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code1]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_regression(data_regression, "tmax_winter", "skewness", params$plotting_xlim, alpha=.8, fill_lim=c(-1,1), colors = cols_bd2)+
+                       labs(fill="skewness in\nweather regressions"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto",
+                   label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/skewnessInWeatherReg_unsmoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
+
+
+# Producing weather regression 'Kurtosis' figure(s) for ms
+# ------------------------------------------------------------------------------------
+
+plot_list1 <- list()
+plot_list2 <- list()
+plot_list3 <- list()
+
+for (species_code1 in params$species_to_process) {
+
+  # load the data for that species:
+  regression_save_path <- paste0(params$output_path, "/regression_results/", species_code1)
+  data_regression <- readRDS(paste0(regression_save_path, "/regressions.rds"))
+
+  # exccess kurtosis
+  data_regression <- data_regression %>% mutate(`excess kurtosis` = kurtosis-3)
+
+  # plot the percentage of observed value (y) fall within 95% credible interval of predicted values
+  p1 <- plot_regression(data_regression, "tmax_winter", "excess kurtosis", params$plotting_xlim, alpha=.8, fill_lim=c(-3,3), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, -2, 0), "cm"))
+
+  p2 <- plot_regression(data_regression, "swe", "excess kurtosis", params$plotting_xlim, alpha=.8, fill_lim=c(-3,3), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(0, 0, 0, 0), "cm"))
+
+  p3 <- plot_regression(data_regression, "tmax_summer", "excess kurtosis", params$plotting_xlim, alpha=.8, fill_lim=c(-3,3), colors = cols_bd2)+
+    theme(legend.position = "none")+theme(plot.margin = unit(c(-2, 0, 0, 0), "cm"))
+
+  plot_list1[[species_code1]] <- gridExtra::grid.arrange(p1)
+  plot_list2[[species_code1]] <- gridExtra::grid.arrange(p2)
+  plot_list3[[species_code1]] <- gridExtra::grid.arrange(p3)
+}
+
+library(gridExtra)
+library(cowplot)
+
+# Get legends from one of the plots
+legend <- get_legend(plot_regression(data_regression, "tmax_winter", "excess kurtosis", params$plotting_xlim, alpha=.8, fill_lim=c(-3,3), colors = cols_bd2)+
+                       labs(fill="excess kurtosis in\nweather regressions"))
+
+# Create the grid with titles
+plots <- plot_grid(plotlist = c(plot_list1,plot_list2, plot_list3),
+                   ncol = 2, nrow = 3, labels = "auto",
+                   label_x = c(.05,.05,.05,.05,.05,.05),
+                   label_y = c(.85,.85,.95,.95,1.05,1.05))
+
+# Add common legend to the plots
+figSX <- grid.arrange(plots,
+                      right=legend,
+                      top=grid::textGrob(c("Carolina Wren", "Northern Cardinal"), x=c(.20, .70), y=c(-.1,-.1)),
+                      left=grid::textGrob(c("recruitment ~ summer temperature", "survival ~ snow cover",
+                                            "survival ~ winter temperature"), y=c(.22,.50,.80), x=.7, rot=90, gp=grid::gpar(fontface=3, fontsize=10)))
+
+
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/excess_kurtosisInWeatherReg_unsmoothed.png", plot=figSX, width = 24, height= 25, units = "cm")
+
+
 ####
 #### Smoothing using ICAR/CAR models: latitude regression----------------------------------------------
 ####
@@ -958,9 +1085,13 @@ icar_fit_lat <-
     data2 = list(M = adjacency_mat),
     backend = 'cmdstanr',
     iter = 12000, warmup = 2000,
-    cores = 4, adapt_delta = .8, max_treedepth = 11, refresh = 0)
+    cores = 4, adapt_delta = .8, max_treedepth = 11, refresh = 0, save_pars = save_pars(latent = TRUE))
 
 summary(icar_fit_lat)
+
+ppc <- brms::pp_check(icar_fit_lat, ndraws = 100)+theme(legend.position = "none")+labs(tag = "a)")
+ppc_plot <- grid.arrange(ppc, val_ppc, ncol=2)
+ggsave("~/Documents/macrodemo_project/output_data/carwre_norcar/carwre_norcar_plots/ppc_plot.png", plot=ppc_plot, width = 18, height= 10, units = "cm")
 
 # backtransform the model output using the inverse of the scale() operation
 post_summ <- data.frame(posterior_summary(icar_fit_lat, variable = c("b_Intercept", "b_lat_scaled", "sdcar")))
