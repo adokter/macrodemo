@@ -1,4 +1,4 @@
-Package: macrodemography
+Package: macrodemo
 Title: Functions for summarizing abundance from ERD
 Version: 0.0.0.9000
 Authors@R: 
