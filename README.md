@@ -1,4 +1,4 @@
-# macrodemo: R-package for macro-demographic analysis using eBird data
+# macrodemo: macro-demographic analysis using eBird data in R
 
 R-package accompanying paper:
 
